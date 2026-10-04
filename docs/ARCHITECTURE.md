@@ -89,7 +89,90 @@ Revised conclusion:
   cross-API waiting, and indirect command buffers. Raw API overhead isn't one of
   the reasons.
 
-## Overall structure
+## Integration decision (2026-10-04, provisional)
+
+Two independent opinions were gathered: Opus (author of this doc) and an
+independent review by GPT-6.1 Sol, which was given the problem, constraints and
+evidence but not the author's preference.
+
+- **Opus initially proposed option A:** a full Metal backend for Minecraft's
+  GPU abstraction, plus our own world renderer.
+- **Sol recommends a staged option B:** keep Minecraft's Vulkan backend and its
+  swapchain/presentation, and run one or two large native Metal sections per
+  frame by sharing images through `VK_EXT_metal_objects`. Move to A only if a
+  measured gate fails.
+  - Sol's argument: A has to make every resource, pipeline, upload, readback
+    and other mods' draws work before the world renderer delivers any value.
+  - Sol also argues that Rockstar's 5-11 ms `rt_trace_wait` shows how Rockstar
+    synchronises, not an unavoidable interop cost.
+
+Adopted: **Sol's staged plan, with an explicit gate.** Reasons:
+
+- Its first prototype is cheap, and decisive for both options.
+- It keeps the GUI, entities and other mods working from day one.
+- A remains open. Sol verified that in 26.3 the GPU API moved to Mojang's
+  `com.mojang.renderpearl` library (`FrontendGpuDevice` wraps a
+  `GpuDeviceBackend`), and that backends receive SPIR-V. The game also ships
+  LWJGL's SPIRV-Cross (`lwjgl-spvc`), so a later Metal backend would not need
+  to process GLSL.
+
+Facts from Sol's inspection that the plan depends on (verify in the prototype):
+
+- `VulkanDevice` exposes the device and queue; `VulkanGpuTexture` exposes
+  `vkImage()`.
+- `VulkanCommandEncoder` throttles submissions, so every extra submit boundary
+  must be measured.
+- `GpuSurface` / `VulkanGpuSurface` own the swapchain and presentation.
+- Windowing is SDL, not GLFW.
+- Vanilla terrain already supports multi-draw indirect. `LevelRenderer`,
+  `ChunkSectionsToRender` and `SectionRenderDispatcher` are the places to hook
+  terrain replacement.
+- `VK_EXT_metal_objects` export must be declared when an image is created.
+  Existing images can't be extracted, so the shared images have to be ours.
+
+Agreed by both:
+
+- Java 25 FFM over a small C ABI. Batch calls per frame, never per draw.
+- Remember that FFM arenas don't know when the GPU has finished with memory.
+
+Checked and ruled out: 26.3's "improved transparency" pipeline was off in all
+benchmark runs (`improvedTransparency:false`).
+
+Disagreement still open:
+
+- Sol says the "about 11 ms fixed cost" reading is a crude two-point fit, not
+  proof of a triangle bottleneck. Changing resolution also changes how GPU work
+  overlaps.
+- Settle this with an Xcode GPU frame capture (per-pass and per-draw timings,
+  bandwidth, attachment load/store) at 100/67/50% scale, windowed and
+  fullscreen, before investing in terrain.
+
+### Gate 1: in-game Vulkan -> Metal -> Vulkan round trip, then MetalFX
+
+Steps:
+
+- Render the world on Vulkan into our own exportable offscreen colour and depth
+  images at about 2316x1452.
+- Submit at an explicit boundary.
+- Run a Metal pass, then MetalFX upscaling to 3456x2168.
+- Hand back to Vulkan for the GUI and normal presentation.
+- Synchronise GPU-side only: no `waitIdle` / `waitUntilCompleted` per frame.
+
+Pass bars:
+
+- Correct over a 10-minute run that includes resize, resource reload and
+  fullscreen toggles.
+- No-op round-trip cost of 0.5 ms or less p95.
+- MetalFX costs 1.5 ms or less.
+- Vanilla plus upscaler at the target scale: 14 ms GPU or less p95.
+
+If it fails:
+
+- Failing the sync/overhead bar rejects option B. Re-evaluate A.
+- Failing the total-time bar means terrain must be optimised before any
+  effects are added.
+
+## Overall structure (sketch assumed option A; under B, Minecraft's Vulkan backend stays and `MetalGpuDevice` is deferred)
 
 ```
 +-----------------------------  Java (Fabric mod, MC 26.3)  -----------------------------+
