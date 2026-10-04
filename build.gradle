@@ -1,0 +1,84 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	testImplementation platform('org.junit:junit-bom:5.13.4')
+	testImplementation 'org.junit.jupiter:junit-jupiter'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Native side: Objective-C library + Metal shader library, arm64 macOS only.
+// Both end up in the jar under natives/ and are extracted at runtime by NativeLib.
+def nativeOut = layout.buildDirectory.dir('native')
+
+def compileShaders = tasks.register('compileShaders', Exec) {
+	def src = fileTree('src/native/shaders') { include '**/*.metal' }
+	def air = nativeOut.map { it.file('tilelight.air') }
+	def lib = nativeOut.map { it.file('natives/tilelight.metallib') }
+	inputs.files(src)
+	outputs.file(lib)
+	doFirst { lib.get().asFile.parentFile.mkdirs() }
+	// Compile every .metal source into one .air, then link into a .metallib.
+	commandLine 'sh', '-c',
+		"xcrun -sdk macosx metal -std=metal3.1 -O3 -c ${src.files.join(' ')} -o '${air.get().asFile}' && " +
+		"xcrun -sdk macosx metallib '${air.get().asFile}' -o '${lib.get().asFile}'"
+}
+
+def compileNative = tasks.register('compileNative', Exec) {
+	def src = fileTree('src/native') { include '*.m', '*.h' }
+	def lib = nativeOut.map { it.file('natives/libtilelight.dylib') }
+	inputs.files(src)
+	outputs.file(lib)
+	doFirst { lib.get().asFile.parentFile.mkdirs() }
+	commandLine 'sh', '-c',
+		"xcrun clang -arch arm64 -mmacosx-version-min=14.0 -fobjc-arc -O2 -Wall -Werror -dynamiclib " +
+		"${src.files.findAll { it.name.endsWith('.m') }.join(' ')} " +
+		"-framework Foundation -framework Metal -framework QuartzCore " +
+		"-install_name @rpath/libtilelight.dylib -o '${lib.get().asFile}'"
+}
+
+processResources {
+	dependsOn compileShaders, compileNative
+	from(nativeOut) { include 'natives/**' }
+
+	def version = project.version
+	inputs.property 'version', version
+	filesMatching('fabric.mod.json') {
+		expand 'version': version
+	}
+}
+
+test {
+	useJUnitPlatform()
+	dependsOn compileShaders, compileNative
+	systemProperty 'tilelight.nativeDir', nativeOut.get().dir('natives').asFile.absolutePath
+	jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+loom {
+	runs {
+		client {
+			vmArg '--enable-native-access=ALL-UNNAMED'
+		}
+	}
+}
+
+jar {
+	from('LICENSE') {
+		rename { "${it}_tilelight" }
+	}
+}

@@ -1,0 +1,14 @@
+warmup high75: 10fps (min8) 104.8ms frame | pass total 90.18 | metal gpu 104.17 | gbuffer 22.40 clouds 16.27 volumetric 8.98 lighting 6.14 rt_trace_wait 5.89 shadows 4.03
+low75 (profile key ignored -> 'quality Custom'): 10fps (min8) 102.4ms | pass total 92.36 | metal gpu 106.29 | gbuffer 19.36 clouds 15.36 volumetric 9.19 rt_trace_wait 8.40 lighting 5.42 taa 5.07 water_ripple 4.89
+high50: 14fps (min11) 72.6ms | pass total 62.00 | metal gpu 71.54 | gbuffer 17.29 clouds 7.84 upscale 6.23 rt_trace_wait 5.36 water_ripple 4.44 final 3.57 volumetric 3.14 lighting 2.43
+high100: 7fps (min6) 144.9ms | pass total 131.01 | metal gpu 149.28 | clouds 32.78 gbuffer 27.87 volumetric 13.07 rt_trace_wait 11.45 lighting 10.01 water 5.48 water_caustics 5.09 | targets 1614MiB
+noext75 (extendedDistance off): 10fps (min8) 96.2ms | pass total 84.01 | metal gpu 95.39 | gbuffer 17.58 clouds 17.49 volumetric 9.13 rt_trace_wait 7.25 lighting 4.66 rt_reflect_wait 4.35
+vanilla (afk-capped?): 30fps (min29) 33.5ms | metal gpu 16.17 | frame interval 33.65
+vanilla2 (no afk cap, native 3456x2168, 16 chunks): 47fps (min33, 1%low 34) 21.3ms | metal gpu 19.72
+PHASE0 gl121 (1.21.11 vanilla OpenGL): F3 50, 36 fps | java GPU busy 97.6% (GPU-bound) | WindowServer 71% busy, T3 11.6%, Unreal 1.4%
+PHASE0 mc121 (1.21.11 + MetalCraft 0.1.0, native Metal): F3 50 fps, HUD 43.8 | trace 44.5 fps, 21.74 ms GPU/frame, busy 96.7% | WindowServer 64%
+PHASE0 gl263 (26.3 vanilla OpenGL, no mods but fabric api): F3 41 fps | java GPU busy 89.0% | WindowServer 68%
+PHASE0 vk263 (26.3 vanilla Vulkan/MoltenVK, Rockstar jar removed): trace 56.6 fps, 17.13 ms GPU/frame, busy 97.0% | WindowServer 72.6%
+PHASE0 vk-opaqueleaves (26.3 Vulkan, cutoutLeaves:false): 59.4 fps, 16.48 ms GPU/frame, busy 97.9%
+PHASE0 vk-noclouds (26.3 Vulkan, clouds off): 60.6 fps, 16.26 ms GPU/frame, busy 98.5%
+PHASE0 vk-quarterpx (26.3 Vulkan, window 864x542pt = 1728x1084px): 77.4 fps, 12.45 ms GPU/frame, busy 96.3%
