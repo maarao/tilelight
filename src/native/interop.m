@@ -13,6 +13,7 @@
 #include "shadows.h"
 #include "terrain.h"
 #include "volumetric.h"
+#include "water.h"
 #include "tilelight.h"
 
 static id<MTLDevice> g_device;
@@ -55,6 +56,7 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		int32_t rc = tl_shadows_init(device, library);
 		if (rc == TL_OK) rc = tl_terrain_init(device, library);
 		if (rc == TL_OK) rc = tl_volumetric_init(device, library);
+		if (rc == TL_OK) rc = tl_water_init(device, library);
 		if (rc != TL_OK) return rc;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;
@@ -140,6 +142,7 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 
 		// Shadows darken the low-res colour before it is upscaled.
 		int32_t rc = in ? tl_shadows_encode_apply(cb, in) : TL_OK;
+		if (rc == TL_OK && in) rc = tl_water_encode(cb, in);
 		if (rc == TL_OK && in) rc = tl_volumetric_encode(cb, in);
 		if (rc == TL_OK) switch (mode) {
 		case TL_MODE_NOOP:
@@ -214,6 +217,7 @@ void tl_interop_shutdown(void *shared_event) {
 	tl_shadows_shutdown();
 	tl_terrain_shutdown();
 	tl_volumetric_shutdown();
+	tl_water_shutdown();
 	if (shared_event) {
 		((__bridge id<MTLSharedEvent>)shared_event).signaledValue = UINT64_MAX;
 	}

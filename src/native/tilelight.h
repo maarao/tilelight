@@ -128,6 +128,21 @@ typedef struct {
 // low-res depth) and the current shadow map, composited before the upscale. Needs a valid shadow map.
 int32_t tl_interop_set_volumetric(const tl_volumetric_params *params, void *world_depth);
 
+// --- Gate 4: water reflections, see water.m ---
+
+// Matches WaterParams in shaders/water.metal.
+typedef struct {
+	float view_proj[16];     // camera-relative world -> clip, Minecraft conventions (row 0 = NDC y -1)
+	float inv_view_proj[16];
+	float sky_horizon[4];    // rgb
+	float sky_zenith[4];     // rgb, a = reflection strength
+	float misc[4];           // max distance, steps, frame index, unused
+} tl_water_params;
+
+// Queues water reflections for the next tl_interop_frame. world_depth is the world's low-res depth
+// including translucents; the terrain-only depth comes from this frame's Metal terrain pass.
+int32_t tl_interop_set_water(const tl_water_params *params, void *world_depth);
+
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);
 

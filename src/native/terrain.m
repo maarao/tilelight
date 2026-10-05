@@ -3,6 +3,7 @@
 #import <Metal/Metal.h>
 #include "shadows.h"
 #include "terrain.h"
+#include "water.h"
 
 static id<MTLDevice> t_device;
 static id<MTLRenderPipelineState> t_solid_pso, t_cutout_pso;
@@ -139,6 +140,8 @@ int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws
 			rc = encode_terrain(cb, params, draws, draw_count, (__bridge id<MTLTexture>)color_tex,
 			                    (__bridge id<MTLTexture>)depth_tex, (__bridge id<MTLTexture>)atlas_tex);
 		}
+		// Terrain-only depth, so the end of the frame can tell where vanilla drew water over it.
+		if (rc == TL_OK) rc = tl_water_capture_terrain_depth(cb, (__bridge id<MTLTexture>)depth_tex);
 		// Always signal, even on error, so Vulkan's wait can never deadlock.
 		[cb encodeSignalEvent:event value:signal_value];
 		tl_interop_track(cb);

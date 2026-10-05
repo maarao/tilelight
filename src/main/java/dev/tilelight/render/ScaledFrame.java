@@ -68,6 +68,7 @@ public final class ScaledFrame {
 	private final ShadowPass shadows = new ShadowPass();
 	private final TerrainPass terrain = new TerrainPass();
 	private final VolumetricPass volumetric = new VolumetricPass();
+	private final WaterPass water = new WaterPass();
 	private long semaphore;
 	private long sharedEvent;
 	// Last value used on the timeline semaphore; every hand-off takes the next two.
@@ -160,9 +161,10 @@ public final class ScaledFrame {
 	}
 
 	private void copyWorldDepth(RenderTarget main) {
-		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied) return;
-		// The Gate 2 overlay and volumetrics need it; Metal terrain alone does not.
-		if (this.terrainDrawn && !this.volumetric.enabled()) return;
+		if (!this.swapped || this.worldDepthCopied) return;
+		// Needed by the Gate 2 shadow overlay (vanilla terrain), or by volumetrics and water reflections.
+		boolean needed = this.terrainDrawn ? this.volumetric.enabled() || this.water.enabled() : this.shadows.enabled();
+		if (!needed) return;
 		this.worldDepthCopied = true;
 		GpuTexture depth = main.getDepthTexture();
 		int w = depth.getWidth(0);
@@ -207,6 +209,10 @@ public final class ScaledFrame {
 				this.volumetric.submit(this.lib, level, ShadowPass.levelProjection, this.shadows.sample(),
 						this.exports.texture(this.worldDepth));
 			}
+		}
+
+		if (in != null && this.terrainDrawn && this.water.enabled() && this.worldDepthCopied) {
+			this.water.submit(this.lib, level, ShadowPass.levelProjection, this.exports.texture(this.worldDepth));
 		}
 
 		long worldDone = ++this.timeline;

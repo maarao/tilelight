@@ -413,6 +413,32 @@ Sol's Gate 3 audit found no ordering or timeline bug. Fixed:
 - Each effect must fit its budget line, and the whole frame must reach 60 fps
   p95 (16.6 ms) at native output.
 
+**Gate 4 status (2026-10-04): PASS on budget, two effects in.**
+
+- **Volumetric sun light (haze and shafts):**
+  - How: a quarter-resolution compute march through the shadow map (16
+    jittered steps, Henyey-Greenstein g=0.6, height falloff), composited
+    before the upscale.
+  - Cost: about 0.56 ms GPU, including the world-depth copy
+    (`tools/bench/results/2026-10-04-gate4-volumetric.txt`, clean runs only).
+- **Water reflections:**
+  - How: screen-space reflections with a sky fallback and Schlick Fresnel.
+    Water pixels are found by comparing the terrain-only depth (copied right
+    after the Metal terrain pass) with the depth after vanilla's translucents,
+    restricted to upward-facing surfaces.
+  - Cost: about 0.35 ms (from Metal's own command-buffer timing; not yet in an
+    interleaved sweep).
+- **Whole frame: about 130 fps** at native output on the reference scene,
+  against the 60 fps (16.6 ms) bar.
+- **Not done:**
+  - Clouds and AO: vanilla's are kept (AO is baked into vertex colours).
+  - Bloom/tonemap: no HDR pipeline yet, since lighting is in vanilla's
+    sRGB-encoded space.
+- **Measurement hygiene:** this chat app's own window redrawing showed up as
+  GPU contention (T3 Code Helper 8-25%, WindowServer 40%) during runs where
+  tool output was streaming. `bench.sh` flagged those runs and they are
+  excluded. Run sweeps while idle.
+
 **Gate 5: temporal upscaling and polish.**
 - MetalFX temporal (needs depth, motion vectors and jitter) vs. spatial.
 - Dynamic resolution, presets.

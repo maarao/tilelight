@@ -47,6 +47,7 @@ public final class NativeLib {
 	private final MethodHandle interopSetShadows;
 	private final MethodHandle interopTerrain;
 	private final MethodHandle interopSetVolumetric;
+	private final MethodHandle interopSetWater;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -74,6 +75,8 @@ public final class NativeLib {
 						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
 						ValueLayout.JAVA_LONG));
 		this.interopSetVolumetric = bind(linker, lookup, "tl_interop_set_volumetric",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopSetWater = bind(linker, lookup, "tl_interop_set_water",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
@@ -202,6 +205,15 @@ public final class NativeLib {
 	public int interopSetVolumetric(MemorySegment params, long worldDepth) {
 		try {
 			return (int) interopSetVolumetric.invokeExact(params, MemorySegment.ofAddress(worldDepth));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Queues water reflections for the next interopFrame; see tl_interop_set_water. */
+	public int interopSetWater(MemorySegment params, long worldDepth) {
+		try {
+			return (int) interopSetWater.invokeExact(params, MemorySegment.ofAddress(worldDepth));
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}
