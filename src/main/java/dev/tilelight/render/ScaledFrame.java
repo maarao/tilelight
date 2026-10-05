@@ -10,6 +10,7 @@ import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.mojang.renderpearl.backend.vulkan.VulkanCommandEncoder;
 import com.mojang.renderpearl.backend.vulkan.VulkanDevice;
 import dev.tilelight.Tilelight;
+import dev.tilelight.TilelightConfig;
 import dev.tilelight.mixin.FrontendCommandEncoderAccessor;
 import dev.tilelight.mixin.FrontendGpuDeviceAccessor;
 import dev.tilelight.mixin.RenderTargetAccessor;
@@ -44,8 +45,7 @@ import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
  *
  * The timeline semaphore is exported as an MTLSharedEvent, so both waits happen on the GPU.
  *
- * <p>Configured with system properties for now: {@code tilelight.mode} = off | noop | bilinear |
- * metalfx (default metalfx), {@code tilelight.scale} = render scale in (0, 1] (default 0.67).
+ * <p>Configured by {@code upscaler} and {@code renderScale} in {@link TilelightConfig}.
  */
 public final class ScaledFrame {
 	private static final long ALL_COMMANDS = 0x10000L; // VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
@@ -69,6 +69,7 @@ public final class ScaledFrame {
 	private final TerrainPass terrain = new TerrainPass();
 	private final VolumetricPass volumetric = new VolumetricPass();
 	private final WaterPass water = new WaterPass();
+	private final TemporalPass temporal = new TemporalPass();
 	private long semaphore;
 	private long sharedEvent;
 	// Last value used on the timeline semaphore; every hand-off takes the next two.
@@ -91,18 +92,15 @@ public final class ScaledFrame {
 	private boolean shadowsWereOn;
 
 	private ScaledFrame() {
-		String m = System.getProperty("tilelight.mode", "metalfx");
-		this.mode = switch (m) {
+		TilelightConfig config = TilelightConfig.get();
+		this.mode = switch (config.upscaler) {
 			case "off" -> -1;
 			case "noop" -> NativeLib.MODE_NOOP;
 			case "bilinear" -> NativeLib.MODE_BILINEAR;
 			case "metalfx" -> NativeLib.MODE_METALFX;
-			default -> throw new IllegalArgumentException("tilelight.mode must be off, noop, bilinear or metalfx, not " + m);
+			default -> NativeLib.MODE_TEMPORAL;
 		};
-		float s = Float.parseFloat(System.getProperty("tilelight.scale", "0.67"));
-		if (!(s > 0f && s <= 1f)) {
-			throw new IllegalArgumentException("tilelight.scale must be in (0, 1], not " + s);
-		}
+		float s = config.renderScale;
 		this.scale = s;
 	}
 
@@ -163,7 +161,8 @@ public final class ScaledFrame {
 	private void copyWorldDepth(RenderTarget main) {
 		if (!this.swapped || this.worldDepthCopied) return;
 		// Needed by the Gate 2 shadow overlay (vanilla terrain), or by volumetrics and water reflections.
-		boolean needed = this.terrainDrawn ? this.volumetric.enabled() || this.water.enabled() : this.shadows.enabled();
+		boolean needed = this.mode == NativeLib.MODE_TEMPORAL
+				|| (this.terrainDrawn ? this.volumetric.enabled() || this.water.enabled() : this.shadows.enabled());
 		if (!needed) return;
 		this.worldDepthCopied = true;
 		GpuTexture depth = main.getDepthTexture();
@@ -215,6 +214,17 @@ public final class ScaledFrame {
 			this.water.submit(this.lib, level, ShadowPass.levelProjection, this.exports.texture(this.worldDepth));
 		}
 
+		if (this.mode == NativeLib.MODE_TEMPORAL) {
+			if (!this.worldDepthCopied) {
+				Tilelight.LOG.error("Temporal upscaling has no world depth this frame; turning Tilelight off");
+				this.state = State.OFF;
+				return;
+			}
+			Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
+			this.temporal.submit(this.lib, level, ShadowPass.levelProjection, in.getWidth(0), in.getHeight(0),
+					this.exports.texture(this.worldDepth), this.exports.texture(handTarget.lowDepth));
+		}
+
 		long worldDone = ++this.timeline;
 		long metalDone = ++this.timeline;
 		VulkanCommandEncoder encoder = vulkanEncoder();
@@ -240,8 +250,17 @@ public final class ScaledFrame {
 		}
 	}
 
-	public void captureProjection(org.joml.Matrix4fc projection) {
-		ShadowPass.levelProjection.set(projection);
+	/**
+	 * Sees the world pass's projection: jitters it for temporal upscaling and keeps it for our passes.
+	 * Returns the projection vanilla should render with.
+	 */
+	public org.joml.Matrix4f captureProjection(org.joml.Matrix4f projection, RenderTarget main) {
+		org.joml.Matrix4f used = projection;
+		if (this.swapped && this.state == State.ACTIVE && this.mode == NativeLib.MODE_TEMPORAL) {
+			used = this.temporal.jitter(projection, main.width, main.height);
+		}
+		ShadowPass.levelProjection.set(used);
+		return used;
 	}
 
 	/** True once Metal has drawn this frame's opaque terrain; vanilla's terrain group is then skipped. */
@@ -411,7 +430,7 @@ public final class ScaledFrame {
 		if (this.state == State.OFF) return false;
 		this.state = State.OFF;
 		if (this.mode < 0) {
-			Tilelight.LOG.info("tilelight.mode=off; leaving rendering to vanilla");
+			Tilelight.LOG.info("Upscaler is off; leaving rendering to vanilla");
 			return false;
 		}
 		this.lib = Tilelight.nativeLib();

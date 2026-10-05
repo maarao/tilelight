@@ -1,0 +1,42 @@
+== g5-spatial67-1
+window 5.46 s
+java (70746)                             busy   4304.4 ms ( 78.8% of window) | 6.11 ms/frame over 704 frames (128.8 fps)
+    Compute      busy    676.1 ms = 0.96 ms/frame
+    Fragment     busy   2662.8 ms = 3.78 ms/frame
+    Vertex       busy   1475.2 ms = 2.10 ms/frame
+WindowServer (598)                       busy    179.9 ms (  3.3% of window) | 5.14 ms/frame over 35 frames (6.4 fps)
+== g5-temporal67-1
+window 5.37 s
+java (71508)                             busy   4662.2 ms ( 86.8% of window) | 11.00 ms/frame over 424 frames (78.9 fps)
+    Compute      busy   2952.9 ms = 6.96 ms/frame
+    Fragment     busy   1260.5 ms = 2.97 ms/frame
+    Vertex       busy    897.8 ms = 2.12 ms/frame
+WindowServer (598)                       busy    178.4 ms (  3.3% of window) | 5.41 ms/frame over 33 frames (6.1 fps)
+== g5-temporal50-1
+window 5.36 s
+java (72636)                             busy   4548.2 ms ( 84.8% of window) | 9.21 ms/frame over 494 frames (92.1 fps)
+    Compute      busy   2695.3 ms = 5.46 ms/frame
+    Fragment     busy   1157.1 ms = 2.34 ms/frame
+    Vertex       busy   1025.8 ms = 2.08 ms/frame
+WindowServer (598)                       busy    191.2 ms (  3.6% of window) | 5.31 ms/frame over 36 frames (6.7 fps)
+== g5-spatial67-2
+window 5.38 s
+java (74085)                             busy   4327.9 ms ( 80.5% of window) | 6.43 ms/frame over 673 frames (125.1 fps)
+    Compute      busy    706.8 ms = 1.05 ms/frame
+    Fragment     busy   2695.5 ms = 4.01 ms/frame
+    Vertex       busy   1437.3 ms = 2.14 ms/frame
+WindowServer (598)                       busy    165.2 ms (  3.1% of window) | 5.51 ms/frame over 30 frames (5.6 fps)
+== g5-temporal67-2
+window 5.37 s
+java (75381)                             busy   4691.6 ms ( 87.3% of window) | 11.39 ms/frame over 412 frames (76.7 fps)
+    Compute      busy   2945.3 ms = 7.15 ms/frame
+    Fragment     busy   1306.0 ms = 3.17 ms/frame
+    Vertex       busy    893.9 ms = 2.17 ms/frame
+WindowServer (598)                       busy    187.9 ms (  3.5% of window) | 5.69 ms/frame over 33 frames (6.1 fps)
+== g5-temporal50-2
+window 5.37 s
+java (76408)                             busy   4560.4 ms ( 84.9% of window) | 9.35 ms/frame over 488 frames (90.9 fps)
+    Compute      busy   2707.4 ms = 5.55 ms/frame
+    Fragment     busy   1169.1 ms = 2.40 ms/frame
+    Vertex       busy   1027.4 ms = 2.11 ms/frame
+WindowServer (598)                       busy    189.7 ms (  3.5% of window) | 5.58 ms/frame over 34 frames (6.3 fps)

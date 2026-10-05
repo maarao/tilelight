@@ -14,6 +14,7 @@
 #include "terrain.h"
 #include "volumetric.h"
 #include "water.h"
+#include "temporal.h"
 #include "tilelight.h"
 
 static id<MTLDevice> g_device;
@@ -57,6 +58,7 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		if (rc == TL_OK) rc = tl_terrain_init(device, library);
 		if (rc == TL_OK) rc = tl_volumetric_init(device, library);
 		if (rc == TL_OK) rc = tl_water_init(device, library);
+		if (rc == TL_OK) rc = tl_temporal_init(device, library);
 		if (rc != TL_OK) return rc;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;
@@ -176,6 +178,9 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 			}
 			break;
 		}
+		case TL_MODE_TEMPORAL:
+			rc = tl_temporal_encode(cb, in, out);
+			break;
 		default:
 			rc = TL_ERR_BUFFER;
 		}
@@ -218,6 +223,7 @@ void tl_interop_shutdown(void *shared_event) {
 	tl_terrain_shutdown();
 	tl_volumetric_shutdown();
 	tl_water_shutdown();
+	tl_temporal_shutdown();
 	if (shared_event) {
 		((__bridge id<MTLSharedEvent>)shared_event).signaledValue = UINT64_MAX;
 	}

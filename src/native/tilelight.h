@@ -46,6 +46,7 @@ enum {
 	TL_MODE_NOOP = 0,     // nothing: measures the cost of the hand-off itself
 	TL_MODE_BILINEAR = 1, // plain bilinear upscale in a fragment shader
 	TL_MODE_METALFX = 2,  // MetalFX spatial upscale
+	TL_MODE_TEMPORAL = 3, // MetalFX temporal upscale (needs tl_interop_set_temporal each frame)
 };
 
 // Adopts Minecraft's MTLDevice (exported via VK_EXT_metal_objects) and creates our own queue on it.
@@ -142,6 +143,21 @@ typedef struct {
 // Queues water reflections for the next tl_interop_frame. world_depth is the world's low-res depth
 // including translucents; the terrain-only depth comes from this frame's Metal terrain pass.
 int32_t tl_interop_set_water(const tl_water_params *params, void *world_depth);
+
+// --- Gate 5: MetalFX temporal upscaling, see temporal.m ---
+
+// Matches TemporalParams in shaders/temporal.metal. Camera-relative, Minecraft clip conventions.
+typedef struct {
+	float inv_view_proj[16];      // this frame, jittered
+	float view_proj[16];          // this frame, unjittered
+	float prev_view_proj[16];     // last frame, unjittered
+	float camera_delta[4];        // this camera position - last camera position
+	float jitter[4];              // x, y in pixels; z = 1 to reset history
+} tl_temporal_params;
+
+// Inputs for TL_MODE_TEMPORAL in the next tl_interop_frame: world_depth is the world's low-res depth;
+// hand_depth is non-zero only where the first-person hand was drawn.
+int32_t tl_interop_set_temporal(const tl_temporal_params *params, void *world_depth, void *hand_depth);
 
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);

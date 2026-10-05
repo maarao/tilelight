@@ -1,5 +1,6 @@
 package dev.tilelight.render;
 
+import dev.tilelight.TilelightConfig;
 import dev.tilelight.mixin.LevelRendererAccessor;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -19,8 +20,8 @@ import org.joml.Matrix4f;
  * Gate 3: replaces vanilla's opaque (SOLID + CUTOUT) terrain with a Metal pass that lights it with
  * sun, sky and block light, using the shadow map for sun visibility.
  *
- * <p>Uses vanilla's own visible-section list, so culling matches vanilla exactly. Configured with
- * {@code tilelight.terrain} = true|false (default true).
+ * <p>Uses vanilla's own visible-section list, so culling matches vanilla exactly. Configured by
+ * {@code terrain} in {@link TilelightConfig}.
  */
 final class TerrainPass {
 	// tl_terrain_params and tl_draw in tilelight.h
@@ -29,7 +30,7 @@ final class TerrainPass {
 	private static final int DRAW_CUTOUT = 1;
 	private static final float SHADOW_STRENGTH = 0.55f;
 
-	private final boolean enabled = Boolean.parseBoolean(System.getProperty("tilelight.terrain", "true"));
+	private final boolean enabled = TilelightConfig.get().terrain;
 	private final Arena arena = Arena.ofShared();
 	private final MemorySegment params = this.arena.allocate(PARAMS_SIZE, 16);
 	private MemorySegment draws = this.arena.allocate(DRAW_SIZE * 8192, 16);

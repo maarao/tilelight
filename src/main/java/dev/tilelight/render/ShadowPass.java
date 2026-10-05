@@ -2,6 +2,7 @@ package dev.tilelight.render;
 
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import dev.tilelight.Tilelight;
+import dev.tilelight.TilelightConfig;
 import dev.tilelight.mixin.LevelRendererAccessor;
 import dev.tilelight.nativeapi.NativeLib;
 import java.lang.foreign.Arena;
@@ -25,8 +26,8 @@ import org.joml.Vector3d;
  * Gate 2: a sun shadow map drawn on Metal straight from vanilla's chunk mesh buffers, applied to
  * vanilla's low-resolution image before it is upscaled.
  *
- * <p>Configured with system properties: {@code tilelight.shadows} = true|false (default true),
- * {@code tilelight.shadowDebug} = 0 | 1 (reconstructed position) | 2 (shadow factor).
+ * <p>Configured by {@code shadows} in {@link TilelightConfig}; the debug system property
+ * {@code tilelight.shadowDebug} = 1 shows reconstructed positions, 2 the shadow factor.
  */
 final class ShadowPass {
 	static final int MAP_SIZE = 2048;
@@ -45,7 +46,7 @@ final class ShadowPass {
 	/** Projection matrix of the current frame's world pass, captured in GameRenderer.renderLevel. */
 	static final Matrix4f levelProjection = new Matrix4f();
 
-	private final boolean enabled = Boolean.parseBoolean(System.getProperty("tilelight.shadows", "true"));
+	private final boolean enabled = TilelightConfig.get().shadows;
 	private final int debug = Integer.getInteger("tilelight.shadowDebug", 0);
 	private final Arena arena = Arena.ofShared();
 	private final MemorySegment params = this.arena.allocate(PARAMS_SIZE, 16);

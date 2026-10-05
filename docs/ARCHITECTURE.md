@@ -443,6 +443,42 @@ Sol's Gate 3 audit found no ordering or timeline bug. Fixed:
 - MetalFX temporal (needs depth, motion vectors and jitter) vs. spatial.
 - Dynamic resolution, presets.
 
+**Gate 5 result (2026-10-04): done, with a cost finding.**
+
+- **Settings:** in `config/tilelight.json` (`TilelightConfig`), written with
+  defaults on first run; `-Dtilelight.*` system properties override them for
+  benchmarks.
+- **MetalFX temporal upscaling** (`upscaler: "temporal"`):
+  - Halton(2,3) sub-pixel jitter is applied to vanilla's world projection
+    where it is captured.
+  - Camera-reprojection motion vectors come from the world depth, with zero
+    motion on hand pixels; reverse-Z depth is passed to MetalFX.
+  - Jitter sign verified visually: the +1 convention is sharp, -1 is blurry
+    (`docs/gate5-temporal-crop.png`).
+  - Moving entities have no per-object motion and may ghost.
+
+Interleaved, clean runs (`tools/bench/results/2026-10-04-gate5-upscalers.txt`):
+
+| Upscaler (with terrain, shadows, haze, water) | GPU ms/frame | FPS  |
+|-----------------------------------------------|--------------|------|
+| MetalFX spatial, 67%                          | 6.27         | 127  |
+| MetalFX temporal, 67%                         | 11.2         | 78   |
+| MetalFX temporal, 50%                         | 9.28         | 92   |
+
+**MetalFX temporal costs about 5 ms** at 3456x2168 output on a base M5, more
+than three times its 1.5 ms budget line. Spatial is therefore the default, and
+temporal is an opt-in "quality" setting that still holds 60+ fps.
+
+A cheaper anti-aliasing path is future work: our own TAA at internal resolution
+plus spatial upscaling.
+
+Dynamic resolution is not implemented; nothing has needed it yet at 127 fps.
+
+**Gate 6 (hardware ray tracing): skipped for now.** Raster shadows cost about
+0.5 ms and volumetrics about 0.56 ms, so ray-traced shadows have little cost
+headroom to win. Revisit for reflections beyond the screen (SSR misses
+off-screen objects), where ray tracing would add quality, not save time.
+
 **Gate 6 (optional, M3+): hardware ray tracing** for shadows and reflections,
 only if it beats the raster version on cost for equal quality.
 

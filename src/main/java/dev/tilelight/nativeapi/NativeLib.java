@@ -33,6 +33,7 @@ public final class NativeLib {
 	public static final int MODE_NOOP = 0;
 	public static final int MODE_BILINEAR = 1;
 	public static final int MODE_METALFX = 2;
+	public static final int MODE_TEMPORAL = 3;
 
 	private static final String DYLIB = "libtilelight.dylib";
 	private static final String METALLIB = "tilelight.metallib";
@@ -48,6 +49,7 @@ public final class NativeLib {
 	private final MethodHandle interopTerrain;
 	private final MethodHandle interopSetVolumetric;
 	private final MethodHandle interopSetWater;
+	private final MethodHandle interopSetTemporal;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -78,6 +80,8 @@ public final class NativeLib {
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopSetWater = bind(linker, lookup, "tl_interop_set_water",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopSetTemporal = bind(linker, lookup, "tl_interop_set_temporal",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -214,6 +218,15 @@ public final class NativeLib {
 	public int interopSetWater(MemorySegment params, long worldDepth) {
 		try {
 			return (int) interopSetWater.invokeExact(params, MemorySegment.ofAddress(worldDepth));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Inputs for MODE_TEMPORAL in the next interopFrame; see tl_interop_set_temporal. */
+	public int interopSetTemporal(MemorySegment params, long worldDepth, long handDepth) {
+		try {
+			return (int) interopSetTemporal.invokeExact(params, MemorySegment.ofAddress(worldDepth), MemorySegment.ofAddress(handDepth));
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

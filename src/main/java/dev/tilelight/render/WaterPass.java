@@ -1,6 +1,7 @@
 package dev.tilelight.render;
 
 import dev.tilelight.Tilelight;
+import dev.tilelight.TilelightConfig;
 import dev.tilelight.nativeapi.NativeLib;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -11,7 +12,7 @@ import org.joml.Vector3fc;
 
 /**
  * Gate 4: screen-space reflections on water, found by comparing depth before and after vanilla's
- * translucent pass. Needs Gate 3 Metal terrain. Configured with {@code tilelight.water} = true|false.
+ * translucent pass. Needs Gate 3 Metal terrain. Configured by {@code water} in {@link TilelightConfig}.
  */
 final class WaterPass {
 	private static final long PARAMS_SIZE = 176; // tl_water_params in tilelight.h
@@ -19,7 +20,7 @@ final class WaterPass {
 	private static final float MAX_DISTANCE = 64f;
 	private static final int STEPS = 24;
 
-	private final boolean enabled = Boolean.parseBoolean(System.getProperty("tilelight.water", "true"));
+	private final boolean enabled = TilelightConfig.get().water;
 	private final MemorySegment params = Arena.ofAuto().allocate(PARAMS_SIZE, 16);
 	private long frame;
 

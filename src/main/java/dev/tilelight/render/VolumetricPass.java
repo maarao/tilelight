@@ -1,6 +1,7 @@
 package dev.tilelight.render;
 
 import dev.tilelight.Tilelight;
+import dev.tilelight.TilelightConfig;
 import dev.tilelight.nativeapi.NativeLib;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -12,16 +13,15 @@ import org.joml.Matrix4f;
 /**
  * Gate 4: sun shafts and haze, ray-marched through the shadow map at quarter resolution.
  *
- * <p>Configured with {@code tilelight.volumetric} = true|false (default true) and
- * {@code tilelight.fogDensity} (default 0.004 per block).
+ * <p>Configured by {@code volumetric} and {@code fogDensity} in {@link TilelightConfig}.
  */
 final class VolumetricPass {
 	private static final long PARAMS_SIZE = 192; // tl_volumetric_params in tilelight.h
 	private static final float MAX_DISTANCE = 128f;
 	private static final int STEPS = 16;
 
-	private final boolean enabled = Boolean.parseBoolean(System.getProperty("tilelight.volumetric", "true"));
-	private final float density = Float.parseFloat(System.getProperty("tilelight.fogDensity", "0.004"));
+	private final boolean enabled = TilelightConfig.get().volumetric;
+	private final float density = TilelightConfig.get().fogDensity;
 	private final MemorySegment params = Arena.ofAuto().allocate(PARAMS_SIZE, 16);
 	private long frame;
 
