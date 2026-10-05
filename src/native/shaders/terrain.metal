@@ -21,6 +21,7 @@ struct TerrainParams {
 	float4 fog_color;
 	float4 fog;               // environmental start, end, render-distance start, end
 	float4 light;             // x sky brightness (rain), y shadow strength, z shadow texel, w shadows on
+	float4 camera_offset;     // xyz = camera block position - camera position (vanilla's CameraOffset)
 };
 
 struct TerrainOut {
@@ -35,7 +36,9 @@ vertex TerrainOut tl_terrain_vs(TerrainVertex in [[stage_in]],
                                 constant TerrainParams &p [[buffer(1)]],
                                 constant packed_float3 &origin [[buffer(2)]]) {
 	TerrainOut out;
-	float3 world = in.position + float3(origin);
+	// Same arithmetic as vanilla's terrain.vsh (Position + (ChunkPosition - CameraBlockPos) + CameraOffset)
+	// so our depth matches what vanilla would have written, for coplanar overlays drawn afterwards.
+	float3 world = in.position + float3(origin) + p.camera_offset.xyz;
 	out.position = p.view_proj * float4(world, 1.0);
 	// Minecraft's Vulkan path puts NDC y = -1 on texel row 0; Metal puts y = +1 there. Flip so our
 	// terrain lands upright in Minecraft's textures, matching its depth for later vanilla passes.

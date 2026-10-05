@@ -60,6 +60,11 @@ public class GameRendererMixin {
 				this.gameRenderState.guiRenderState.clearColorOverride);
 	}
 
+	@Inject(method = "renderLevel", at = @At("HEAD"))
+	private void tilelight$renderLevelHead(CallbackInfo ci) {
+		ScaledFrame.get().beginLevelRender();
+	}
+
 	// The projection actually used for the world pass (includes view bobbing and nausea warp).
 	@ModifyArg(method = "renderLevel", at = @At(value = "INVOKE",
 			target = "Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;"))

@@ -84,11 +84,18 @@ static int32_t encode_terrain(id<MTLCommandBuffer> cb, const tl_terrain_params *
 	rp.depthAttachment.loadAction = MTLLoadActionLoad;
 	rp.depthAttachment.storeAction = MTLStoreActionStore;
 	id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+	if (!enc) return TL_ERR_GPU;
 	enc.label = @"tilelight terrain";
 	[enc setDepthStencilState:t_depth_state];
-	[enc setCullMode:MTLCullModeNone];
-	[enc setVertexBytes:params length:sizeof(*params) atIndex:1];
-	[enc setFragmentBytes:params length:sizeof(*params) atIndex:0];
+	// Same as vanilla's terrain pipelines (back faces culled, clockwise front). The clip-space Y flip
+	// puts every triangle on the same pixels as Vulkan would, so the winding carries over unchanged.
+	[enc setFrontFacingWinding:MTLWindingClockwise];
+	[enc setCullMode:MTLCullModeBack];
+	// Never sample a map that was not (fully) drawn.
+	tl_terrain_params p = *params;
+	if (!tl_shadows_map_valid()) p.light[3] = 0.0f;
+	[enc setVertexBytes:&p length:sizeof(p) atIndex:1];
+	[enc setFragmentBytes:&p length:sizeof(p) atIndex:0];
 	[enc setFragmentTexture:atlas atIndex:0];
 	[enc setFragmentTexture:tl_shadows_map() atIndex:1];
 	[enc setFragmentSamplerState:t_atlas_sampler atIndex:0];

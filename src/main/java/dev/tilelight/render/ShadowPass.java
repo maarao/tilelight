@@ -69,6 +69,11 @@ final class ShadowPass {
 		return this.enabled && level.skyRenderState.skybox == DimensionType.Skybox.OVERWORLD;
 	}
 
+	/** Forces a redraw next frame, e.g. after the map failed to draw. */
+	void invalidate() {
+		this.mapCamera = null;
+	}
+
 	/** The current map's shadow clip space for this frame's camera; valid after submit. */
 	Matrix4f sample() {
 		return this.sample;

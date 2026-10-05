@@ -12,7 +12,9 @@ int32_t tl_shadows_encode_map(id<MTLCommandBuffer> cb);
 // in place. Clears the queue. Call once per frame, before upscaling.
 int32_t tl_shadows_encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color);
 
+// The shadow map if a valid one exists, else a 1x1 placeholder so shaders always have a texture bound.
 id<MTLTexture> tl_shadows_map(void);
+BOOL tl_shadows_map_valid(void);
 id<MTLSamplerState> tl_shadows_compare_sampler(void);
 
 // A shared uint32 index buffer of sequential quads (0,1,2,2,3,0, ...) with at least index_count entries.

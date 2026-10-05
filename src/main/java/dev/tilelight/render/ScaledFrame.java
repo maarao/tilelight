@@ -233,7 +233,12 @@ public final class ScaledFrame {
 
 	/** True once Metal has drawn this frame's opaque terrain; vanilla's terrain group is then skipped. */
 	public boolean terrainDrawn() {
-		return this.terrainDrawn;
+		return this.terrainDrawn && this.swapped && this.state == State.ACTIVE;
+	}
+
+	/** Called at the start of every GameRenderer.renderLevel, including panorama captures. */
+	public void beginLevelRender() {
+		this.terrainDrawn = false;
 	}
 
 	/**
@@ -249,6 +254,10 @@ public final class ScaledFrame {
 		}
 		this.terrain.prepare(this.exports, level, ShadowPass.levelProjection, shadowsOn ? this.shadows.sample() : null,
 				level.skyRenderState.sunAngle);
+		if (!this.terrain.complete()) {
+			// Some section could not be handed to Metal; vanilla draws all terrain rather than leave holes.
+			return;
+		}
 		long atlas = this.exports.texture(net.minecraft.client.Minecraft.getInstance().getTextureManager()
 				.getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getTexture());
 
@@ -266,6 +275,7 @@ public final class ScaledFrame {
 			this.terrainDrawn = true;
 		} else {
 			Tilelight.LOG.error("Metal terrain failed with code {}; vanilla draws terrain this frame", rc);
+			this.shadows.invalidate();
 		}
 	}
 

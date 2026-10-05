@@ -102,6 +102,8 @@ typedef struct {
 	float fog_color[4];
 	float fog[4];            // environmental start, end, render-distance start, end
 	float light[4];          // sky brightness, shadow strength, shadow texel size, shadows on (0/1)
+	float camera_offset[4];  // xyz = camera block position - camera position; draw origins are relative
+	                         // to the camera block position in Gate 3
 } tl_terrain_params;
 
 // Commits a command buffer on our queue that waits for shared_event >= wait_value, draws the shadow

@@ -24,7 +24,7 @@ import org.joml.Matrix4f;
  */
 final class TerrainPass {
 	// tl_terrain_params and tl_draw in tilelight.h
-	private static final long PARAMS_SIZE = 192;
+	private static final long PARAMS_SIZE = 208;
 	private static final long DRAW_SIZE = 56;
 	private static final int DRAW_CUTOUT = 1;
 	private static final float SHADOW_STRENGTH = 0.55f;
@@ -34,6 +34,7 @@ final class TerrainPass {
 	private final MemorySegment params = this.arena.allocate(PARAMS_SIZE, 16);
 	private MemorySegment draws = this.arena.allocate(DRAW_SIZE * 8192, 16);
 	private int drawCount;
+	private boolean complete;
 
 	boolean enabled() {
 		return this.enabled;
@@ -51,13 +52,21 @@ final class TerrainPass {
 		return this.drawCount;
 	}
 
+	/** False if some vanilla-renderable section could not be exported; vanilla must draw terrain then. */
+	boolean complete() {
+		return this.complete;
+	}
+
 	/** Fills params and the draw list for this frame. shadowSample is null when there are no shadows. */
 	void prepare(MetalExports exports, LevelRenderState level, Matrix4f projection, Matrix4f shadowSample, float sunAngle) {
 		Minecraft mc = Minecraft.getInstance();
 		LevelRendererAccessor lr = (LevelRendererAccessor) mc.levelRenderer;
 		SectionRenderDispatcher dispatcher = lr.tilelight$sectionRenderDispatcher();
 		Vec3 cam = level.cameraRenderState.pos;
-		this.drawCount = dispatcher == null ? 0 : gather(exports, lr.tilelight$visibleSections(), dispatcher, cam);
+		// Same as GlobalSettingsUniform's CameraBlockPos.
+		BlockPos camBlock = BlockPos.containing(Math.floor(cam.x), Math.floor(cam.y), Math.floor(cam.z));
+		this.complete = dispatcher != null;
+		this.drawCount = dispatcher == null ? 0 : gather(exports, lr.tilelight$visibleSections(), dispatcher, camBlock);
 
 		Matrix4f viewProj = new Matrix4f(projection).mul(level.cameraRenderState.viewRotationMatrix);
 		float sunX = (float) -Math.sin(sunAngle);
@@ -84,10 +93,15 @@ final class TerrainPass {
 		p.set(ValueLayout.JAVA_FLOAT, 180, SHADOW_STRENGTH);
 		p.set(ValueLayout.JAVA_FLOAT, 184, 1f / ShadowPass.MAP_SIZE);
 		p.set(ValueLayout.JAVA_FLOAT, 188, shadowSample != null ? 1f : 0f);
+		// vanilla's CameraOffset: draw origins are relative to the camera's block, the fraction is added on the GPU
+		p.set(ValueLayout.JAVA_FLOAT, 192, (float) (camBlock.getX() - cam.x));
+		p.set(ValueLayout.JAVA_FLOAT, 196, (float) (camBlock.getY() - cam.y));
+		p.set(ValueLayout.JAVA_FLOAT, 200, (float) (camBlock.getZ() - cam.z));
+		p.set(ValueLayout.JAVA_FLOAT, 204, 0f);
 	}
 
 	private int gather(MetalExports exports, List<SectionRenderDispatcher.RenderSection> sections, SectionRenderDispatcher dispatcher,
-			Vec3 cam) {
+			BlockPos camBlock) {
 		int count = 0;
 		dispatcher.lock();
 		try {
@@ -100,14 +114,20 @@ final class TerrainPass {
 					SectionRenderDispatcher.RenderSectionBufferSlice slice = dispatcher.getRenderSectionSlice(mesh, layer);
 					if (slice == null) continue;
 					MetalExports.BufferRef vertices = exports.buffer(slice.vertexBuffer());
-					if (vertices == null) continue;
+					if (vertices == null) {
+						this.complete = false;
+						continue;
+					}
 					long indexBuffer = 0L;
 					long indexOffset = 0L;
 					int indexType = 1;
 					if (draw.hasCustomIndexBuffer()) {
-						if (slice.indexBuffer() == null) continue;
+						if (slice.indexBuffer() == null) continue; // vanilla skips these too
 						MetalExports.BufferRef indices = exports.buffer(slice.indexBuffer());
-						if (indices == null) continue;
+						if (indices == null) {
+							this.complete = false;
+							continue;
+						}
 						indexBuffer = indices.mtlBuffer();
 						indexOffset = indices.offset() + slice.indexBufferOffset();
 						indexType = draw.indexType().bytes == 4 ? 1 : 0;
@@ -119,7 +139,7 @@ final class TerrainPass {
 					}
 					ShadowPass.writeDraw(this.draws, count * DRAW_SIZE, vertices.mtlBuffer(), vertices.offset() + slice.vertexBufferOffset(),
 							indexBuffer, indexOffset, draw.indexCount(), indexType,
-							(float) (origin.getX() - cam.x), (float) (origin.getY() - cam.y), (float) (origin.getZ() - cam.z),
+							origin.getX() - camBlock.getX(), origin.getY() - camBlock.getY(), origin.getZ() - camBlock.getZ(),
 							layer == ChunkSectionLayer.CUTOUT ? DRAW_CUTOUT : 0);
 					count++;
 				}

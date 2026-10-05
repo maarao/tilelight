@@ -12,6 +12,8 @@ static MTLPixelFormat s_apply_color_format;
 static id<MTLDepthStencilState> s_depth_less;
 static id<MTLSamplerState> s_nearest, s_compare;
 static id<MTLTexture> s_shadow_map;
+static BOOL s_map_valid;          // s_shadow_map holds a fully drawn map
+static id<MTLTexture> s_dummy_map; // bound when there is no valid map, so shaders always have a texture
 static id<MTLBuffer> s_quad_indices; // sequential quads as uint32
 static uint32_t s_quad_index_capacity;
 
@@ -71,7 +73,15 @@ int32_t tl_shadows_init(id<MTLDevice> device, id<MTLLibrary> library) {
 	sd.sAddressMode = MTLSamplerAddressModeClampToEdge;
 	sd.tAddressMode = MTLSamplerAddressModeClampToEdge;
 	s_compare = [device newSamplerStateWithDescriptor:sd];
-	return TL_OK;
+
+	MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+	                                                                              width:1
+	                                                                             height:1
+	                                                                          mipmapped:NO];
+	td.usage = MTLTextureUsageShaderRead;
+	td.storageMode = MTLStorageModePrivate;
+	s_dummy_map = [device newTextureWithDescriptor:td];
+	return s_dummy_map ? TL_OK : TL_ERR_BUFFER;
 }
 
 static int32_t ensure_apply(MTLPixelFormat color_format) {
@@ -146,6 +156,7 @@ int32_t tl_interop_set_shadows(const tl_shadow_params *params, const tl_draw *dr
 }
 
 static int32_t encode_shadow_map(id<MTLCommandBuffer> cb) {
+	s_map_valid = NO;
 	int32_t rc = ensure_shadow_map(s_params.shadow_map_size);
 	if (rc != TL_OK) return rc;
 	uint32_t max_quad_indices = 0;
@@ -160,6 +171,7 @@ static int32_t encode_shadow_map(id<MTLCommandBuffer> cb) {
 	rp.depthAttachment.clearDepth = 1.0;
 	rp.depthAttachment.storeAction = MTLStoreActionStore;
 	id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+	if (!enc) return TL_ERR_GPU;
 	enc.label = @"tilelight shadow map";
 	[enc setDepthStencilState:s_depth_less];
 	// Casters are drawn double-sided: thin cutout geometry (leaves, plants) has no back faces.
@@ -194,6 +206,7 @@ static int32_t encode_shadow_map(id<MTLCommandBuffer> cb) {
 		}
 	}
 	[enc endEncoding];
+	s_map_valid = YES;
 	return TL_OK;
 }
 
@@ -222,6 +235,7 @@ static int32_t encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
 	rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
 	rp.colorAttachments[0].storeAction = MTLStoreActionStore;
 	id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+	if (!enc) return TL_ERR_GPU;
 	enc.label = @"tilelight shadow apply";
 	[enc setRenderPipelineState:s_apply_pso];
 	[enc setFragmentTexture:s_depth atIndex:0];
@@ -237,21 +251,25 @@ static int32_t encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
 int32_t tl_shadows_encode_map(id<MTLCommandBuffer> cb) {
 	if (!s_pending || s_map_drawn) return TL_OK;
 	s_map_drawn = YES;
-	if (!s_params.render_map && s_shadow_map) return TL_OK;
+	if (!s_params.render_map && s_map_valid) return TL_OK;
 	return encode_shadow_map(cb);
 }
 
 int32_t tl_shadows_encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
 	if (!s_pending) return TL_OK;
 	int32_t rc = tl_shadows_encode_map(cb);
-	if (rc == TL_OK && s_params.overlay) rc = encode_apply(cb, color);
+	if (rc == TL_OK && s_params.overlay && s_map_valid) rc = encode_apply(cb, color);
 	s_pending = NO;
 	s_depth = s_hand_depth = s_atlas = nil;
 	return rc;
 }
 
 id<MTLTexture> tl_shadows_map(void) {
-	return s_shadow_map;
+	return s_map_valid ? s_shadow_map : s_dummy_map;
+}
+
+BOOL tl_shadows_map_valid(void) {
+	return s_map_valid;
 }
 
 id<MTLSamplerState> tl_shadows_compare_sampler(void) {
@@ -269,6 +287,8 @@ void tl_shadows_shutdown(void) {
 	s_draw_count = s_draw_capacity = 0;
 	s_depth = s_hand_depth = s_atlas = nil;
 	s_shadow_map = nil;
+	s_map_valid = NO;
+	s_dummy_map = nil;
 	s_quad_indices = nil;
 	s_quad_index_capacity = 0;
 	s_solid_pso = s_cutout_pso = s_apply_pso = nil;
