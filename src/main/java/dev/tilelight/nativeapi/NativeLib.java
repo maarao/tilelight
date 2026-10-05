@@ -28,6 +28,10 @@ public final class NativeLib {
 	public static final long CAP_UNIFIED_MEMORY = 1L << 2;
 	public static final long CAP_METAL3 = 1L << 3;
 
+	public static final int MODE_NOOP = 0;
+	public static final int MODE_BILINEAR = 1;
+	public static final int MODE_METALFX = 2;
+
 	private static final String DYLIB = "libtilelight.dylib";
 	private static final String METALLIB = "tilelight.metallib";
 
@@ -36,6 +40,10 @@ public final class NativeLib {
 	private final MethodHandle capabilities;
 	private final MethodHandle selftest;
 	private final MethodHandle shutdown;
+	private final MethodHandle interopInit;
+	private final MethodHandle interopFrame;
+	private final MethodHandle interopTakeStats;
+	private final MethodHandle interopShutdown;
 	private final Path metallib;
 
 	private NativeLib(Path dir) {
@@ -48,6 +56,14 @@ public final class NativeLib {
 		this.selftest = bind(linker, lookup, "tl_selftest",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 		this.shutdown = bind(linker, lookup, "tl_shutdown", FunctionDescriptor.ofVoid());
+		this.interopInit = bind(linker, lookup, "tl_interop_init",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopFrame = bind(linker, lookup, "tl_interop_frame",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+						ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid());
 		this.metallib = dir.resolve(METALLIB);
 	}
 
@@ -121,6 +137,51 @@ public final class NativeLib {
 	public void shutdown() {
 		try {
 			shutdown.invokeExact();
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Adopts Minecraft's MTLDevice (a raw id pointer) and creates our own command queue on it. */
+	public int interopInit(long mtlDevice) {
+		try (Arena arena = Arena.ofConfined()) {
+			return (int) interopInit.invokeExact(MemorySegment.ofAddress(mtlDevice), arena.allocateFrom(metallib.toString()));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Encodes and commits one interop command buffer; see tl_interop_frame. Returns a tl error code. */
+	public int interopFrame(int mode, long inTexture, long outTexture, long sharedEvent, long waitValue, long signalValue) {
+		try {
+			return (int) interopFrame.invokeExact(mode, MemorySegment.ofAddress(inTexture), MemorySegment.ofAddress(outTexture),
+					MemorySegment.ofAddress(sharedEvent), waitValue, signalValue);
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** GPU time and count of completed interop frames since the last call, and failed command buffers. */
+	public record InteropStats(long gpuNanos, long frames, int errors) {
+	}
+
+	public InteropStats interopTakeStats() {
+		try (Arena arena = Arena.ofConfined()) {
+			MemorySegment gpuNs = arena.allocate(ValueLayout.JAVA_LONG);
+			MemorySegment frames = arena.allocate(ValueLayout.JAVA_LONG);
+			MemorySegment errors = arena.allocate(ValueLayout.JAVA_INT);
+			int rc = (int) interopTakeStats.invokeExact(gpuNs, frames, errors);
+			check(rc, "tl_interop_take_stats");
+			return new InteropStats(gpuNs.get(ValueLayout.JAVA_LONG, 0), frames.get(ValueLayout.JAVA_LONG, 0),
+					errors.get(ValueLayout.JAVA_INT, 0));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	public void interopShutdown() {
+		try {
+			interopShutdown.invokeExact();
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

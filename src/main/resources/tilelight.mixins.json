@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "dev.tilelight.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"FrontendCommandEncoderAccessor",
+		"FrontendGpuDeviceAccessor",
+		"GameRendererMixin",
+		"RenderTargetAccessor",
+		"VulkanFeatureSetsMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

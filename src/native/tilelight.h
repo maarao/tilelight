@@ -47,10 +47,10 @@ enum {
 	TL_MODE_METALFX = 2,  // MetalFX spatial upscale
 };
 
-// Adopts Minecraft's MTLDevice and MTLCommandQueue (exported via VK_EXT_metal_objects).
-int32_t tl_interop_init(void *mtl_device, void *mtl_queue, const char *metallib_path);
+// Adopts Minecraft's MTLDevice (exported via VK_EXT_metal_objects) and creates our own queue on it.
+int32_t tl_interop_init(void *mtl_device, const char *metallib_path);
 
-// Encodes one frame on Minecraft's queue: wait for shared_event >= wait_value, run mode
+// Encodes and commits one command buffer on our queue: wait for shared_event >= wait_value, run mode
 // reading in_tex and writing out_tex, then set shared_event to signal_value. Never blocks the CPU.
 int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared_event, uint64_t wait_value,
                          uint64_t signal_value);

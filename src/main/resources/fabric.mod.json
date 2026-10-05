@@ -4,16 +4,23 @@
 	"version": "${version}",
 	"name": "Tilelight",
 	"description": "A Metal renderer for Minecraft on Apple Silicon.",
-	"authors": ["maanavr"],
+	"authors": [
+		"maanavr"
+	],
 	"license": "Apache-2.0",
 	"environment": "client",
 	"entrypoints": {
-		"client": ["dev.tilelight.Tilelight"]
+		"client": [
+			"dev.tilelight.Tilelight"
+		]
 	},
 	"depends": {
 		"fabricloader": ">=0.19.5",
 		"minecraft": "~26.3",
 		"java": ">=25",
 		"fabric-api": "*"
-	}
+	},
+	"mixins": [
+		"tilelight.mixins.json"
+	]
 }

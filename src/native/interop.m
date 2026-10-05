@@ -1,6 +1,6 @@
 // Gate 1: Metal work inside Minecraft's Vulkan (MoltenVK) frame.
 //
-// Java exports Minecraft's MTLDevice, MTLCommandQueue, MTLTextures and an MTLSharedEvent through
+// Java exports Minecraft's MTLDevice, MTLTextures and an MTLSharedEvent through
 // VK_EXT_metal_objects and hands us the raw pointers. Each frame:
 //   Vulkan: world -> low-res colour, submit, signal event = 2n+1
 //   Metal (here): wait 2n+1, upscale low-res -> native colour, signal 2n+2
@@ -30,8 +30,8 @@ static _Atomic int64_t g_gpu_ns_total;
 static _Atomic int64_t g_frames;
 static _Atomic int32_t g_errors;
 
-int32_t tl_interop_init(void *mtl_device, void *mtl_queue, const char *metallib_path) {
-	if (!mtl_device || !mtl_queue) return TL_ERR_NO_DEVICE;
+int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
+	if (!mtl_device) return TL_ERR_NO_DEVICE;
 	@autoreleasepool {
 		id<MTLDevice> device = (__bridge id<MTLDevice>)mtl_device;
 		NSError *error = nil;
@@ -42,7 +42,10 @@ int32_t tl_interop_init(void *mtl_device, void *mtl_queue, const char *metallib_
 			return TL_ERR_LIBRARY;
 		}
 		g_device = device;
-		g_queue = (__bridge id<MTLCommandQueue>)mtl_queue;
+		// Our own queue, not MoltenVK's: our command buffer is committed before Vulkan submits the
+		// frame and waits on the GPU for it, which would deadlock on a shared in-order queue.
+		g_queue = [device newCommandQueue];
+		g_queue.label = @"tilelight interop";
 		g_library = library;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;

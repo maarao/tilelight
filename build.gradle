@@ -18,15 +18,21 @@ def nativeOut = layout.buildDirectory.dir('native')
 
 def compileShaders = tasks.register('compileShaders', Exec) {
 	def src = fileTree('src/native/shaders') { include '**/*.metal' }
-	def air = nativeOut.map { it.file('tilelight.air') }
+	def airDir = nativeOut.map { it.dir('air') }
 	def lib = nativeOut.map { it.file('natives/tilelight.metallib') }
 	inputs.files(src)
 	outputs.file(lib)
-	doFirst { lib.get().asFile.parentFile.mkdirs() }
-	// Compile every .metal source into one .air, then link into a .metallib.
+	doFirst {
+		lib.get().asFile.parentFile.mkdirs()
+		airDir.get().asFile.mkdirs()
+	}
+	// Compile each .metal source to its own .air, then link them all into one .metallib.
+	def airs = src.files.collect { "'${airDir.get().asFile}/${it.name}.air'" }
+	def compiles = src.files.collect {
+		"xcrun -sdk macosx metal -std=metal3.1 -O3 -c '${it}' -o '${airDir.get().asFile}/${it.name}.air'"
+	}
 	commandLine 'sh', '-c',
-		"xcrun -sdk macosx metal -std=metal3.1 -O3 -c ${src.files.join(' ')} -o '${air.get().asFile}' && " +
-		"xcrun -sdk macosx metallib '${air.get().asFile}' -o '${lib.get().asFile}'"
+		"set -e; ${compiles.join('; ')}; xcrun -sdk macosx metallib ${airs.join(' ')} -o '${lib.get().asFile}'"
 }
 
 def compileNative = tasks.register('compileNative', Exec) {
