@@ -1,0 +1,63 @@
+== g1b-off-1.0-1
+window 5.39 s
+java (13223)                             busy   5303.7 ms ( 98.5% of window) | 6.13 ms/frame over 865 frames (160.6 fps)
+    Compute      busy     13.8 ms = 0.02 ms/frame
+    Fragment     busy   3406.7 ms = 3.94 ms/frame
+    Vertex       busy   2000.2 ms = 2.31 ms/frame
+WindowServer (598)                       busy    446.5 ms (  8.3% of window) | 5.80 ms/frame over 77 frames (14.3 fps)
+== g1b-noop-1.0-1
+window 5.38 s
+java (14000)                             busy   5038.6 ms ( 93.6% of window) | 6.18 ms/frame over 815 frames (151.4 fps)
+    Compute      busy     14.2 ms = 0.02 ms/frame
+    Fragment     busy   3361.6 ms = 4.12 ms/frame
+    Vertex       busy   1737.9 ms = 2.13 ms/frame
+WindowServer (598)                       busy    458.7 ms (  8.5% of window) | 6.04 ms/frame over 76 frames (14.1 fps)
+== g1b-metalfx-0.67-1
+window 5.36 s
+java (15620)                             busy   4777.5 ms ( 89.1% of window) | 6.01 ms/frame over 795 frames (148.3 fps)
+    Compute      busy     18.9 ms = 0.02 ms/frame
+    Fragment     busy   3160.6 ms = 3.98 ms/frame
+    Vertex       busy   1699.5 ms = 2.14 ms/frame
+WindowServer (598)                       busy    457.2 ms (  8.5% of window) | 5.94 ms/frame over 77 frames (14.4 fps)
+== g1b-off-1.0-2
+window 5.39 s
+java (16857)                             busy   5310.9 ms ( 98.5% of window) | 6.26 ms/frame over 849 frames (157.4 fps)
+    Compute      busy     13.9 ms = 0.02 ms/frame
+    Fragment     busy   3436.0 ms = 4.05 ms/frame
+    Vertex       busy   1963.2 ms = 2.31 ms/frame
+WindowServer (598)                       busy    455.4 ms (  8.4% of window) | 5.91 ms/frame over 77 frames (14.3 fps)
+== g1b-noop-1.0-2
+window 5.37 s
+java (18097)                             busy   5023.5 ms ( 93.6% of window) | 6.18 ms/frame over 813 frames (151.5 fps)
+    Compute      busy     14.1 ms = 0.02 ms/frame
+    Fragment     busy   3355.8 ms = 4.13 ms/frame
+    Vertex       busy   1728.2 ms = 2.13 ms/frame
+WindowServer (598)                       busy    470.9 ms (  8.8% of window) | 6.20 ms/frame over 76 frames (14.2 fps)
+== g1b-metalfx-0.67-2
+window 5.37 s
+java (19210)                             busy   4761.6 ms ( 88.7% of window) | 5.94 ms/frame over 802 frames (149.5 fps)
+    Compute      busy     15.4 ms = 0.02 ms/frame
+    Fragment     busy   3123.9 ms = 3.90 ms/frame
+    Vertex       busy   1716.9 ms = 2.14 ms/frame
+WindowServer (598)                       busy    446.5 ms (  8.3% of window) | 5.87 ms/frame over 76 frames (14.2 fps)
+== g1b-off-1.0-3
+window 5.37 s
+java (20684)                             busy   5286.2 ms ( 98.5% of window) | 6.21 ms/frame over 851 frames (158.6 fps)
+    Compute      busy     14.5 ms = 0.02 ms/frame
+    Fragment     busy   3432.4 ms = 4.03 ms/frame
+    Vertex       busy   1944.5 ms = 2.28 ms/frame
+WindowServer (598)                       busy    461.4 ms (  8.6% of window) | 5.92 ms/frame over 78 frames (14.5 fps)
+== g1b-noop-1.0-3
+window 5.40 s
+java (22116)                             busy   5047.5 ms ( 93.5% of window) | 6.10 ms/frame over 828 frames (153.4 fps)
+    Compute      busy     13.8 ms = 0.02 ms/frame
+    Fragment     busy   3339.5 ms = 4.03 ms/frame
+    Vertex       busy   1775.5 ms = 2.14 ms/frame
+WindowServer (598)                       busy    473.9 ms (  8.8% of window) | 5.85 ms/frame over 81 frames (15.0 fps)
+== g1b-metalfx-0.67-3
+window 5.37 s
+java (23200)                             busy   4758.4 ms ( 88.6% of window) | 5.93 ms/frame over 802 frames (149.3 fps)
+    Compute      busy     14.8 ms = 0.02 ms/frame
+    Fragment     busy   3126.0 ms = 3.90 ms/frame
+    Vertex       busy   1711.7 ms = 2.13 ms/frame
+WindowServer (598)                       busy    454.4 ms (  8.5% of window) | 5.90 ms/frame over 77 frames (14.3 fps)

@@ -284,6 +284,32 @@ consequence if it fails.
 **Gate 1: Vulkan -> Metal -> Vulkan round trip + MetalFX** (bars in "Integration
 decision").
 
+**Gate 1 result (2026-10-04): PASS, with a caveat.** Three interleaved runs per
+mode on a frozen world snapshot (`tools/bench/results/2026-10-04-gate1.txt`):
+
+| Mode                                  | GPU ms/frame | FPS   | GPU busy |
+|---------------------------------------|--------------|-------|----------|
+| Vanilla, native 3456x2168             | 6.20         | 158.9 | 98.5%    |
+| Hand-off only (noop, native)          | 6.15         | 152.1 | 93.6%    |
+| MetalFX spatial, 67% (2316x1453)      | 5.96         | 149.0 | 88.8%    |
+
+How each bar did:
+
+- **Hand-off: pass.** No measurable GPU time, but about 0.28 ms of wall time
+  per frame, because the GPU idles while one queue waits on the other.
+- **MetalFX: pass** at about 1.3 ms (bilinear costs about 0.3 ms).
+- **Vanilla + upscaler at 67% below native GPU time: pass, barely** (5.96 vs
+  6.20 ms).
+- **Stability: pass.** 14 minutes and about 119k frames with 0 errors, through
+  post effects, glowing entities and four resizes or fullscreen toggles.
+
+Caveat: vanilla is cheap, so upscaling it barely pays, and FPS is slightly
+lower than native because of the idle gaps. Render scale earns its keep once
+per-pixel effects are added (Gates 3-4). Two things to watch:
+
+- The cross-queue idle gaps (busy 98% -> 89%).
+- Whether MetalFX temporal (Gate 5) or a cheaper spatial filter is worth it.
+
 **Gate 2: Metal draws Minecraft's terrain.**
 - Export vanilla's section vertex/index buffers (`VulkanGpuBuffer`) as
   `MTLBuffer`s, with no copies.

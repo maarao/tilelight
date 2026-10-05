@@ -1,6 +1,9 @@
 #!/bin/bash
 # usage: bench.sh "<prism instance name>" <label>
 #
+# Compare configurations only within one interleaved sweep: absolute GPU times drifted by ~25%
+# across a day of runs on the same machine (6.7 -> 8.4 ms for vanilla), cause not pinned down.
+#
 # Puts the camera at the fixed spot, launches into world "bench", waits $WAIT seconds
 # (default 50) for chunks to load, then either:
 #   TRACE=1  records a 5 s Metal System Trace and appends the parsed GPU time to $RESULTS
@@ -14,6 +17,9 @@ OUT=${OUT:-/tmp/mcbench}; RESULTS=${RESULTS:-$OUT/results.txt}
 mkdir -p "$OUT"
 M="$HOME/Library/Application Support/PrismLauncher/instances/$INST/minecraft"; L="$M/logs/latest.log"
 PAT="Xdock:nam[e]=.*$INST"
+# Restore a frozen copy of the world so every run sees the same generated terrain.
+SNAPSHOT=${SNAPSHOT:-$HOME/Library/Caches/tilelight-bench/world-26.3}
+if [ -d "$SNAPSHOT" ] && [[ "$INST" == 26.3* ]]; then rsync -a --delete "$SNAPSHOT/" "$M/saves/bench/"; fi
 /tmp/mcbench/venv/bin/python "$HERE/setcam.py" "$M/saves/bench"
 touch "$OUT/stamp"
 "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" --launch "$INST" >"$OUT/prism-$LABEL.log" 2>&1 &

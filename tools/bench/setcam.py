@@ -8,6 +8,9 @@ def fix(p):
     p["Motion"] = List[Double]([Double(0), Double(0), Double(0)])
     p["abilities"]["flying"] = Byte(1)
     p["OnGround"] = Byte(0)
+    # /posteffect state is saved with the player; a leftover creeper filter once skewed a whole sweep.
+    if "post_effects" in p:
+        del p["post_effects"]
 n = 0
 lvl = nbtlib.load(os.path.join(w, "level.dat"))
 if "Player" in lvl["Data"]:
