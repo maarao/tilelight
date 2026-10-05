@@ -12,6 +12,12 @@ static NSUInteger m_in_w, m_in_h, m_out_w, m_out_h;
 static MTLPixelFormat m_color_fmt, m_depth_fmt, m_out_fmt;
 static id<MTLTexture> m_scratch; // when the output texture lacks the usage MetalFX needs
 
+// TAA: two history textures, swapped every frame.
+static id<MTLComputePipelineState> m_taa_pso;
+static id<MTLTexture> m_history[2];
+static int m_history_index;
+static id<MTLSamplerState> m_linear;
+
 static BOOL m_pending;
 static tl_temporal_params m_params;
 static id<MTLTexture> m_depth, m_hand_depth;
@@ -22,11 +28,20 @@ int32_t tl_temporal_init(id<MTLDevice> device, id<MTLLibrary> library) {
 	id<MTLFunction> fn = [library newFunctionWithName:@"tl_motion_vectors"];
 	if (!fn) return TL_ERR_LIBRARY;
 	m_motion_pso = [device newComputePipelineStateWithFunction:fn error:&error];
-	if (!m_motion_pso) {
-		NSLog(@"tilelight: motion vector pipeline: %@", error);
+	id<MTLFunction> taa = [library newFunctionWithName:@"tl_taa_resolve"];
+	if (!taa) return TL_ERR_LIBRARY;
+	m_taa_pso = [device newComputePipelineStateWithFunction:taa error:&error];
+	if (!m_motion_pso || !m_taa_pso) {
+		NSLog(@"tilelight: temporal pipelines: %@", error);
 		return TL_ERR_PIPELINE;
 	}
-	return TL_OK;
+	MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
+	sd.minFilter = MTLSamplerMinMagFilterLinear;
+	sd.magFilter = MTLSamplerMinMagFilterLinear;
+	sd.sAddressMode = MTLSamplerAddressModeClampToEdge;
+	sd.tAddressMode = MTLSamplerAddressModeClampToEdge;
+	m_linear = [device newSamplerStateWithDescriptor:sd];
+	return m_linear ? TL_OK : TL_ERR_PIPELINE;
 }
 
 int32_t tl_interop_set_temporal(const tl_temporal_params *params, void *world_depth, void *hand_depth) {
@@ -130,6 +145,48 @@ int32_t tl_temporal_encode(id<MTLCommandBuffer> cb, id<MTLTexture> in, id<MTLTex
 	return TL_OK;
 }
 
+int32_t tl_taa_encode(id<MTLCommandBuffer> cb, id<MTLTexture> in, id<MTLTexture> __strong *resolved) {
+	if (!m_pending) return TL_ERR_BUFFER; // needs inputs every frame
+	m_pending = NO;
+	id<MTLTexture> depth = m_depth, hand = m_hand_depth;
+	m_depth = m_hand_depth = nil;
+	if (depth.width != in.width || depth.height != in.height) return TL_ERR_BUFFER;
+
+	if (!m_history[0] || m_history[0].width != in.width || m_history[0].height != in.height) {
+		MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+		                                                                              width:in.width
+		                                                                             height:in.height
+		                                                                          mipmapped:NO];
+		td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+		td.storageMode = MTLStorageModePrivate;
+		for (int i = 0; i < 2; i++) {
+			m_history[i] = [m_device newTextureWithDescriptor:td];
+			if (!m_history[i]) return TL_ERR_BUFFER;
+			m_history[i].label = @"tilelight taa history";
+		}
+		m_params.jitter[2] = 1.0f; // nothing to blend with yet
+	}
+	id<MTLTexture> prev = m_history[m_history_index];
+	m_history_index ^= 1;
+	id<MTLTexture> next = m_history[m_history_index];
+
+	id<MTLComputeCommandEncoder> ce = [cb computeCommandEncoder];
+	if (!ce) return TL_ERR_GPU;
+	ce.label = @"tilelight taa";
+	[ce setComputePipelineState:m_taa_pso];
+	[ce setTexture:in atIndex:0];
+	[ce setTexture:prev atIndex:1];
+	[ce setTexture:next atIndex:2];
+	[ce setTexture:depth atIndex:3];
+	[ce setTexture:hand atIndex:4];
+	[ce setSamplerState:m_linear atIndex:0];
+	[ce setBytes:&m_params length:sizeof(m_params) atIndex:0];
+	[ce dispatchThreads:MTLSizeMake(in.width, in.height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+	[ce endEncoding];
+	*resolved = next;
+	return TL_OK;
+}
+
 void tl_temporal_shutdown(void) {
 	m_pending = NO;
 	m_depth = m_hand_depth = nil;
@@ -137,5 +194,8 @@ void tl_temporal_shutdown(void) {
 	m_scratch = nil;
 	m_motion = nil;
 	m_motion_pso = nil;
+	m_taa_pso = nil;
+	m_history[0] = m_history[1] = nil;
+	m_linear = nil;
 	m_device = nil;
 }

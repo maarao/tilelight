@@ -34,6 +34,7 @@ public final class NativeLib {
 	public static final int MODE_BILINEAR = 1;
 	public static final int MODE_METALFX = 2;
 	public static final int MODE_TEMPORAL = 3;
+	public static final int MODE_TAA = 4;
 
 	private static final String DYLIB = "libtilelight.dylib";
 	private static final String METALLIB = "tilelight.metallib";
@@ -229,7 +230,7 @@ public final class NativeLib {
 		}
 	}
 
-	/** Inputs for MODE_TEMPORAL in the next interopFrame; see tl_interop_set_temporal. */
+	/** Inputs for MODE_TEMPORAL or MODE_TAA in the next interopFrame; see tl_interop_set_temporal. */
 	public int interopSetTemporal(MemorySegment params, long worldDepth, long handDepth) {
 		try {
 			return (int) interopSetTemporal.invokeExact(params, MemorySegment.ofAddress(worldDepth), MemorySegment.ofAddress(handDepth));

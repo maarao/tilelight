@@ -1,0 +1,63 @@
+== aa-metalfx-1
+window 5.43 s
+java (18125)                             busy   5149.7 ms ( 94.9% of window) | 6.37 ms/frame over 809 frames (149.0 fps)
+    Compute      busy    847.2 ms = 1.05 ms/frame
+    Fragment     busy   3302.3 ms = 4.08 ms/frame
+    Vertex       busy   1715.7 ms = 2.12 ms/frame
+WindowServer (598)                       busy    198.4 ms (  3.7% of window) | 5.36 ms/frame over 37 frames (6.8 fps)
+== aa-taa-1
+window 5.37 s
+java (19380)                             busy   5106.5 ms ( 95.1% of window) | 7.18 ms/frame over 711 frames (132.4 fps)
+    Compute      busy   1356.1 ms = 1.91 ms/frame
+    Fragment     busy   2895.4 ms = 4.07 ms/frame
+    Vertex       busy   1495.2 ms = 2.10 ms/frame
+WindowServer (598)                       busy    169.1 ms (  3.1% of window) | 5.64 ms/frame over 30 frames (5.6 fps)
+== aa-temporal-1
+window 5.38 s
+java (20936)                             busy   5208.1 ms ( 96.8% of window) | 11.68 ms/frame over 446 frames (82.9 fps)
+    Compute      busy   3327.3 ms = 7.46 ms/frame
+    Fragment     busy   1407.0 ms = 3.15 ms/frame
+    Vertex       busy    990.5 ms = 2.22 ms/frame
+WindowServer (598)                       busy    211.2 ms (  3.9% of window) | 5.56 ms/frame over 38 frames (7.1 fps)
+== aa-metalfx-2
+window 5.38 s
+java (22289)                             busy   5104.3 ms ( 94.9% of window) | 6.59 ms/frame over 775 frames (144.1 fps)
+    Compute      busy    849.6 ms = 1.10 ms/frame
+    Fragment     busy   3276.6 ms = 4.23 ms/frame
+    Vertex       busy   1685.2 ms = 2.17 ms/frame
+WindowServer (598)                       busy    180.8 ms (  3.4% of window) | 6.03 ms/frame over 30 frames (5.6 fps)
+== aa-taa-2
+window 5.38 s
+java (24469)                             busy   5122.2 ms ( 95.3% of window) | 7.28 ms/frame over 704 frames (130.9 fps)
+    Compute      busy   1339.2 ms = 1.90 ms/frame
+    Fragment     busy   2920.1 ms = 4.15 ms/frame
+    Vertex       busy   1509.5 ms = 2.14 ms/frame
+WindowServer (598)                       busy    190.5 ms (  3.5% of window) | 5.95 ms/frame over 32 frames (6.0 fps)
+== aa-temporal-2
+window 5.37 s
+java (25959)                             busy   5211.9 ms ( 97.1% of window) | 11.48 ms/frame over 454 frames (84.6 fps)
+    Compute      busy   3332.2 ms = 7.34 ms/frame
+    Fragment     busy   1409.7 ms = 3.10 ms/frame
+    Vertex       busy   1005.8 ms = 2.22 ms/frame
+WindowServer (598)                       busy    173.9 ms (  3.2% of window) | 5.80 ms/frame over 30 frames (5.6 fps)
+== aa-metalfx-3
+window 5.39 s
+java (27477)                             busy   5102.4 ms ( 94.7% of window) | 6.39 ms/frame over 799 frames (148.3 fps)
+    Compute      busy    840.2 ms = 1.05 ms/frame
+    Fragment     busy   3284.8 ms = 4.11 ms/frame
+    Vertex       busy   1684.5 ms = 2.11 ms/frame
+WindowServer (598)                       busy    203.2 ms (  3.8% of window) | 5.81 ms/frame over 35 frames (6.5 fps)
+== aa-taa-3
+window 5.38 s
+java (28720)                             busy   5117.3 ms ( 95.2% of window) | 7.05 ms/frame over 726 frames (135.0 fps)
+    Compute      busy   1331.1 ms = 1.83 ms/frame
+    Fragment     busy   2911.3 ms = 4.01 ms/frame
+    Vertex       busy   1512.1 ms = 2.08 ms/frame
+WindowServer (598)                       busy    161.8 ms (  3.0% of window) | 5.39 ms/frame over 30 frames (5.6 fps)
+== aa-temporal-3
+window 5.36 s
+java (30005)                             busy   5188.0 ms ( 96.7% of window) | 11.06 ms/frame over 469 frames (87.4 fps)
+    Compute      busy   3339.5 ms = 7.12 ms/frame
+    Fragment     busy   1368.1 ms = 2.92 ms/frame
+    Vertex       busy    979.5 ms = 2.09 ms/frame
+WindowServer (598)                       busy    177.7 ms (  3.3% of window) | 5.38 ms/frame over 33 frames (6.2 fps)

@@ -12,12 +12,12 @@ with Vulkan and handing off through GPU-side events (no CPU waits):
   chunk buffers.
 - **Volumetric haze and sun shafts**, ray-marched through the shadow map.
 - **Water reflections** in screen space, with a sky fallback and Fresnel.
-- **Render scale + MetalFX upscaling:** spatial by default, temporal as an
-  option.
+- **Render scale + anti-aliasing:** our TAA at internal resolution plus MetalFX
+  spatial upscaling by default; MetalFX temporal or spatial-only as options.
 
 On a base M5 MacBook Pro at native 3456×2168, render distance 16, all of the
-above runs at ~151 fps on the reference scene, against ~168 fps for vanilla in
-the same session. Details, measurements and the reasoning behind every
+above runs at ~133 fps on the reference scene with TAA (~147 fps without
+anti-aliasing), against ~160-168 fps for vanilla. Details, measurements and the reasoning behind every
 choice: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ![Tilelight on the reference scene](docs/final.png)
@@ -35,9 +35,10 @@ Settings live in `config/tilelight.json` (written on first run):
 
 | Key          | Default   | Meaning                                                         |
 |--------------|-----------|-----------------------------------------------------------------|
-| `upscaler`   | `metalfx` | `metalfx` (spatial), `temporal` (sharper, ~5 ms more), `bilinear`, `off` |
+| `upscaler`   | `taa`     | `taa` (anti-aliased, ~0.75 ms), `metalfx` (spatial only, fastest), `temporal` (sharpest, ~5 ms), `bilinear`, `off` |
 | `renderScale`| `0.67`    | fraction of the window the world renders at                    |
 | `terrain`    | `true`    | Metal terrain and lighting (otherwise vanilla terrain + shadow overlay) |
+| `sameQueue`  | `true`    | run on MoltenVK's queue (faster); `false` uses a separate queue |
 | `shadows`, `volumetric`, `water` | `true` | effects                               |
 | `fogDensity` | `0.004`   | haze density per block                                          |
 

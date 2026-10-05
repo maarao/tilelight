@@ -576,6 +576,36 @@ and an unchecked synchronous-submit assumption. All three are fixed above. The
 re-audit found the upload split and the dropped terrain event sound, and
 raised the staged-upload and layer-settings conditions now gated.
 
+## Cheaper anti-aliasing: our TAA + MetalFX spatial (2026-10-05)
+
+Upscaler `taa` (now the default):
+
+- The same jitter and camera-reprojection inputs as MetalFX temporal.
+- A TAA resolve at the internal 67% resolution, in `tl_taa_resolve`:
+  - history sampled with 5-tap Catmull-Rom;
+  - history clamped to the 3x3 neighbourhood in YCoCg;
+  - motion taken from the closest depth in that 3x3;
+  - luminance-weighted 90/10 blend into RGBA16Float history; the hand is
+    treated as fixed to the camera.
+- MetalFX spatial upscales the resolved image.
+
+Interleaved, three runs each (`tools/bench/results/2026-10-05-antialiasing.txt`):
+
+| Upscaler                      | FPS  | Anti-aliased        |
+|-------------------------------|------|---------------------|
+| MetalFX spatial               | 147  | no                  |
+| Our TAA + MetalFX spatial     | 133  | yes                 |
+| MetalFX temporal              | 85   | yes (sharpest)      |
+
+How it looks:
+
+- Static camera: TAA resolves the aliased leaf edges that spatial-only
+  leaves. Compare `docs/aa-taa-crop.png` with `docs/aa-spatial-crop.png`.
+- Turning camera (30 degrees/s, via a repeating command block): no visible
+  ghost trails on the tree line against the sky (`docs/aa-taa-moving.png`).
+- Not tested: moving entities, which have no motion vectors and may smear
+  slightly.
+
 ## Known issues
 
 From GPT-6.1 Sol's audit of Gate 1 (2026-10-04). Findings 1, 2, 3, 5 and 6

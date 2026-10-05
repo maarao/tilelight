@@ -47,6 +47,7 @@ enum {
 	TL_MODE_BILINEAR = 1, // plain bilinear upscale in a fragment shader
 	TL_MODE_METALFX = 2,  // MetalFX spatial upscale
 	TL_MODE_TEMPORAL = 3, // MetalFX temporal upscale (needs tl_interop_set_temporal each frame)
+	TL_MODE_TAA = 4,      // our TAA at internal resolution, then MetalFX spatial (same inputs as temporal)
 };
 
 // Adopts Minecraft's MTLDevice (exported via VK_EXT_metal_objects) and creates our own queue on it.

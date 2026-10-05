@@ -131,6 +131,22 @@ static int32_t ensure_scaler(id<MTLTexture> in, id<MTLTexture> out) {
 	return TL_OK;
 }
 
+// MetalFX spatial upscale from in to out.
+static int32_t encode_spatial(id<MTLCommandBuffer> cb, id<MTLTexture> in, id<MTLTexture> out) {
+	int32_t rc = ensure_scaler(in, out);
+	if (rc != TL_OK) return rc;
+	g_scaler.colorTexture = in;
+	g_scaler.outputTexture = g_scaler_scratch ? g_scaler_scratch : out;
+	[g_scaler encodeToCommandBuffer:cb];
+	if (g_scaler_scratch) {
+		id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+		if (!blit) return TL_ERR_GPU;
+		[blit copyFromTexture:g_scaler_scratch toTexture:out];
+		[blit endEncoding];
+	}
+	return TL_OK;
+}
+
 int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared_event, uint64_t wait_value,
                          uint64_t signal_value) {
 	if (!g_device) return TL_ERR_NOT_INITIALIZED;
@@ -170,22 +186,18 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 			[enc endEncoding];
 			break;
 		}
-		case TL_MODE_METALFX: {
-			rc = ensure_scaler(in, out);
-			if (rc != TL_OK) break;
-			g_scaler.colorTexture = in;
-			g_scaler.outputTexture = g_scaler_scratch ? g_scaler_scratch : out;
-			[g_scaler encodeToCommandBuffer:cb];
-			if (g_scaler_scratch) {
-				id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-				[blit copyFromTexture:g_scaler_scratch toTexture:out];
-				[blit endEncoding];
-			}
+		case TL_MODE_METALFX:
+			rc = encode_spatial(cb, in, out);
 			break;
-		}
 		case TL_MODE_TEMPORAL:
 			rc = tl_temporal_encode(cb, in, out);
 			break;
+		case TL_MODE_TAA: {
+			id<MTLTexture> resolved = nil;
+			rc = tl_taa_encode(cb, in, &resolved);
+			if (rc == TL_OK) rc = encode_spatial(cb, resolved, out);
+			break;
+		}
 		default:
 			rc = TL_ERR_BUFFER;
 		}

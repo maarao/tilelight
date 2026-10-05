@@ -107,7 +107,8 @@ public final class ScaledFrame {
 			case "noop" -> NativeLib.MODE_NOOP;
 			case "bilinear" -> NativeLib.MODE_BILINEAR;
 			case "metalfx" -> NativeLib.MODE_METALFX;
-			default -> NativeLib.MODE_TEMPORAL;
+			case "temporal" -> NativeLib.MODE_TEMPORAL;
+			default -> NativeLib.MODE_TAA;
 		};
 		float s = config.renderScale;
 		this.scale = s;
@@ -173,7 +174,7 @@ public final class ScaledFrame {
 	private void copyWorldDepth(RenderTarget main) {
 		if (!this.swapped || this.worldDepthCopied) return;
 		// Needed by the Gate 2 shadow overlay (vanilla terrain), or by volumetrics and water reflections.
-		boolean needed = this.mode == NativeLib.MODE_TEMPORAL
+		boolean needed = jittered()
 				|| (this.terrainDrawn ? this.volumetric.enabled() || this.water.enabled() : this.shadows.enabled());
 		if (!needed) return;
 		this.worldDepthCopied = true;
@@ -227,9 +228,9 @@ public final class ScaledFrame {
 			this.water.submit(this.lib, level, ShadowPass.levelProjection, this.exports.texture(this.worldDepth));
 		}
 
-		if (this.mode == NativeLib.MODE_TEMPORAL) {
+		if (jittered()) {
 			if (!this.worldDepthCopied) {
-				Tilelight.LOG.error("Temporal upscaling has no world depth this frame; turning Tilelight off");
+				Tilelight.LOG.error("Temporal anti-aliasing has no world depth this frame; turning Tilelight off");
 				this.state = State.OFF;
 				return;
 			}
@@ -280,11 +281,16 @@ public final class ScaledFrame {
 	 */
 	public org.joml.Matrix4f captureProjection(org.joml.Matrix4f projection, RenderTarget main) {
 		org.joml.Matrix4f used = projection;
-		if (this.swapped && this.state == State.ACTIVE && this.mode == NativeLib.MODE_TEMPORAL) {
+		if (this.swapped && this.state == State.ACTIVE && jittered()) {
 			used = this.temporal.jitter(projection, main.width, main.height);
 		}
 		ShadowPass.levelProjection.set(used);
 		return used;
+	}
+
+	/** Temporal anti-aliasing modes: the world is jittered and needs depth and motion every frame. */
+	private boolean jittered() {
+		return this.mode == NativeLib.MODE_TEMPORAL || this.mode == NativeLib.MODE_TAA;
 	}
 
 	/** True once Metal has drawn this frame's opaque terrain; vanilla's terrain group is then skipped. */

@@ -9,4 +9,8 @@ int32_t tl_temporal_init(id<MTLDevice> device, id<MTLLibrary> library);
 // Needs this frame's tl_interop_set_temporal inputs.
 int32_t tl_temporal_encode(id<MTLCommandBuffer> cb, id<MTLTexture> in, id<MTLTexture> out);
 
+// Resolves TAA at internal resolution from `in` into a history texture, returned in *resolved, using
+// this frame's tl_interop_set_temporal inputs.
+int32_t tl_taa_encode(id<MTLCommandBuffer> cb, id<MTLTexture> in, id<MTLTexture> __strong *resolved);
+
 void tl_temporal_shutdown(void);

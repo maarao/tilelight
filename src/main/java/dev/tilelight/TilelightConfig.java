@@ -16,10 +16,11 @@ import net.fabricmc.loader.api.FabricLoader;
  */
 public final class TilelightConfig {
 	/**
-	 * off | noop | bilinear | metalfx | temporal. MetalFX spatial is the default: temporal is sharper
-	 * and anti-aliased but costs about 5 ms more per frame on a base M5 (see docs/ARCHITECTURE.md).
+	 * off | noop | bilinear | metalfx | taa | temporal. metalfx: MetalFX spatial. taa: our TAA at
+	 * internal resolution, then MetalFX spatial (default, ~0.75 ms). temporal: MetalFX temporal,
+	 * sharpest but ~5 ms per frame on a base M5 (see docs/ARCHITECTURE.md).
 	 */
-	public String upscaler = "metalfx";
+	public String upscaler = "taa";
 	/** Fraction of the window the world renders at before upscaling, in (0, 1]. */
 	public float renderScale = 0.67f;
 	/** Draw and light opaque terrain on Metal (Gate 3). */
@@ -79,11 +80,11 @@ public final class TilelightConfig {
 
 	private void validate() {
 		switch (this.upscaler) {
-			case "off", "noop", "bilinear", "metalfx", "temporal" -> {
+			case "off", "noop", "bilinear", "metalfx", "temporal", "taa" -> {
 			}
 			default -> {
-				Tilelight.LOG.warn("Unknown upscaler '{}'; using metalfx", this.upscaler);
-				this.upscaler = "metalfx";
+				Tilelight.LOG.warn("Unknown upscaler '{}'; using taa", this.upscaler);
+				this.upscaler = "taa";
 			}
 		}
 		if (!(this.renderScale > 0f && this.renderScale <= 1f)) {
