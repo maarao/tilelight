@@ -114,6 +114,7 @@ typedef struct {
 	float light[4];          // sky brightness, shadow strength, shadow texel size, shadows on (0/1)
 	float camera_offset[4];  // xyz = camera block position - camera position; draw origins are relative
 	                         // to the camera block position in Gate 3
+	float sky_color[4];      // rgb = vanilla's sky colour (sRGB), a = exposure
 } tl_terrain_params;
 
 // Commits a command buffer on our queue that waits for shared_event >= wait_value, draws the shadow
@@ -147,6 +148,7 @@ typedef struct {
 	float sky_horizon[4];    // rgb
 	float sky_zenith[4];     // rgb, a = reflection strength
 	float misc[4];           // max distance, steps, frame index, unused
+	float sun[4];            // xyz towards the sun, w = sun glint intensity
 } tl_water_params;
 
 // Queues water reflections for the next tl_interop_frame. world_depth is the world's low-res depth
@@ -167,6 +169,9 @@ typedef struct {
 // Inputs for TL_MODE_TEMPORAL in the next tl_interop_frame: world_depth is the world's low-res depth;
 // hand_depth is non-zero only where the first-person hand was drawn.
 int32_t tl_interop_set_temporal(const tl_temporal_params *params, void *world_depth, void *hand_depth);
+
+// Bloom on the low-res world colour before upscaling; intensity 0 turns it off.
+int32_t tl_interop_set_bloom(float threshold, float knee, float intensity);
 
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);

@@ -1,0 +1,63 @@
+== look-off-1
+window 5.45 s
+java (59367)                             busy   5406.5 ms ( 99.2% of window) | 6.18 ms/frame over 875 frames (160.6 fps)
+    Compute      busy     16.0 ms = 0.02 ms/frame
+    Fragment     busy   3464.1 ms = 3.96 ms/frame
+    Vertex       busy   1945.4 ms = 2.22 ms/frame
+WindowServer (598)                       busy    188.6 ms (  3.5% of window) | 6.29 ms/frame over 30 frames (5.5 fps)
+== look-nobloom-1
+window 5.37 s
+java (60207)                             busy   5098.8 ms ( 95.0% of window) | 7.51 ms/frame over 679 frames (126.5 fps)
+    Compute      busy   1295.3 ms = 1.91 ms/frame
+    Fragment     busy   2924.2 ms = 4.31 ms/frame
+    Vertex       busy   1433.4 ms = 2.11 ms/frame
+WindowServer (598)                       busy    211.4 ms (  3.9% of window) | 5.87 ms/frame over 36 frames (6.7 fps)
+== look-default-1
+window 5.35 s
+java (61023)                             busy   5110.1 ms ( 95.5% of window) | 7.64 ms/frame over 669 frames (125.1 fps)
+    Compute      busy   1322.9 ms = 1.98 ms/frame
+    Fragment     busy   2911.3 ms = 4.35 ms/frame
+    Vertex       busy   1412.7 ms = 2.11 ms/frame
+WindowServer (598)                       busy    213.0 ms (  4.0% of window) | 5.92 ms/frame over 36 frames (6.7 fps)
+== look-off-2
+window 5.36 s
+java (62723)                             busy   5331.5 ms ( 99.4% of window) | 6.29 ms/frame over 848 frames (158.1 fps)
+    Compute      busy     16.4 ms = 0.02 ms/frame
+    Fragment     busy   3431.5 ms = 4.05 ms/frame
+    Vertex       busy   1902.1 ms = 2.24 ms/frame
+WindowServer (598)                       busy    189.2 ms (  3.5% of window) | 6.31 ms/frame over 30 frames (5.6 fps)
+== look-nobloom-2
+window 5.37 s
+java (63489)                             busy   5121.1 ms ( 95.4% of window) | 7.62 ms/frame over 672 frames (125.1 fps)
+    Compute      busy   1302.6 ms = 1.94 ms/frame
+    Fragment     busy   2927.7 ms = 4.36 ms/frame
+    Vertex       busy   1448.8 ms = 2.16 ms/frame
+WindowServer (598)                       busy    184.2 ms (  3.4% of window) | 5.94 ms/frame over 31 frames (5.8 fps)
+== look-default-2
+window 5.37 s
+java (64089)                             busy   5137.0 ms ( 95.6% of window) | 7.85 ms/frame over 654 frames (121.7 fps)
+    Compute      busy   1295.6 ms = 1.98 ms/frame
+    Fragment     busy   2954.7 ms = 4.52 ms/frame
+    Vertex       busy   1423.1 ms = 2.18 ms/frame
+WindowServer (598)                       busy    217.3 ms (  4.0% of window) | 6.03 ms/frame over 36 frames (6.7 fps)
+== look-off-3
+window 5.37 s
+java (65079)                             busy   5332.8 ms ( 99.3% of window) | 6.33 ms/frame over 843 frames (157.0 fps)
+    Compute      busy     16.8 ms = 0.02 ms/frame
+    Fragment     busy   3400.9 ms = 4.03 ms/frame
+    Vertex       busy   1933.6 ms = 2.29 ms/frame
+WindowServer (598)                       busy    220.2 ms (  4.1% of window) | 6.12 ms/frame over 36 frames (6.7 fps)
+== look-nobloom-3
+window 5.38 s
+java (65635)                             busy   5121.6 ms ( 95.3% of window) | 7.34 ms/frame over 698 frames (129.8 fps)
+    Compute      busy   1287.6 ms = 1.84 ms/frame
+    Fragment     busy   2908.3 ms = 4.17 ms/frame
+    Vertex       busy   1473.4 ms = 2.11 ms/frame
+WindowServer (598)                       busy    170.0 ms (  3.2% of window) | 5.67 ms/frame over 30 frames (5.6 fps)
+== look-default-3
+window 5.38 s
+java (66404)                             busy   5123.1 ms ( 95.2% of window) | 7.46 ms/frame over 687 frames (127.7 fps)
+    Compute      busy   1317.4 ms = 1.92 ms/frame
+    Fragment     busy   2927.8 ms = 4.26 ms/frame
+    Vertex       busy   1427.7 ms = 2.08 ms/frame
+WindowServer (598)                       busy    169.1 ms (  3.1% of window) | 5.64 ms/frame over 30 frames (5.6 fps)

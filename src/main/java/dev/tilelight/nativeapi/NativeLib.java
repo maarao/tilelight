@@ -52,6 +52,7 @@ public final class NativeLib {
 	private final MethodHandle interopSetWater;
 	private final MethodHandle interopSetTemporal;
 	private final MethodHandle interopUseQueue;
+	private final MethodHandle interopSetBloom;
 	private final MethodHandle interopTrackingReport;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
@@ -89,6 +90,8 @@ public final class NativeLib {
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 		this.interopTrackingReport = bind(linker, lookup, "tl_interop_tracking_report",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+		this.interopSetBloom = bind(linker, lookup, "tl_interop_set_bloom",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -253,6 +256,15 @@ public final class NativeLib {
 			MemorySegment buf = arena.allocate(512);
 			check((int) interopTrackingReport.invokeExact(buf, 512), "tl_interop_tracking_report");
 			return buf.getString(0);
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Bloom settings for every following frame; intensity 0 turns it off. */
+	public int interopSetBloom(float threshold, float knee, float intensity) {
+		try {
+			return (int) interopSetBloom.invokeExact(threshold, knee, intensity);
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

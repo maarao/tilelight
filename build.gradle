@@ -44,7 +44,7 @@ def compileNative = tasks.register('compileNative', Exec) {
 	commandLine 'sh', '-c',
 		"xcrun clang -arch arm64 -mmacosx-version-min=14.0 -fobjc-arc -O2 -Wall -Werror -dynamiclib " +
 		"${src.files.findAll { it.name.endsWith('.m') }.join(' ')} " +
-		"-framework Foundation -framework Metal -framework MetalFX -framework QuartzCore " +
+		"-framework Foundation -framework Metal -framework MetalFX -framework MetalPerformanceShaders -framework QuartzCore " +
 		"-install_name @rpath/libtilelight.dylib -o '${lib.get().asFile}'"
 }
 

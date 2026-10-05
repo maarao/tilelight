@@ -15,6 +15,7 @@ import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector3fc;
 
 /**
  * Gate 3: replaces vanilla's opaque (SOLID + CUTOUT) terrain with a Metal pass that lights it with
@@ -25,10 +26,9 @@ import org.joml.Matrix4f;
  */
 final class TerrainPass {
 	// tl_terrain_params and tl_draw in tilelight.h
-	private static final long PARAMS_SIZE = 208;
+	private static final long PARAMS_SIZE = 224;
 	private static final long DRAW_SIZE = 56;
 	private static final int DRAW_CUTOUT = 1;
-	private static final float SHADOW_STRENGTH = 0.55f;
 
 	private final boolean enabled = TilelightConfig.get().terrain;
 	private final Arena arena = Arena.ofShared();
@@ -91,7 +91,7 @@ final class TerrainPass {
 		p.set(ValueLayout.JAVA_FLOAT, 168, fog.renderDistanceStart);
 		p.set(ValueLayout.JAVA_FLOAT, 172, fog.renderDistanceEnd);
 		p.set(ValueLayout.JAVA_FLOAT, 176, level.skyRenderState.rainBrightness);
-		p.set(ValueLayout.JAVA_FLOAT, 180, SHADOW_STRENGTH);
+		p.set(ValueLayout.JAVA_FLOAT, 180, 0f); // unused since lighting moved to linear HDR
 		p.set(ValueLayout.JAVA_FLOAT, 184, 1f / ShadowPass.MAP_SIZE);
 		p.set(ValueLayout.JAVA_FLOAT, 188, shadowSample != null ? 1f : 0f);
 		// vanilla's CameraOffset: draw origins are relative to the camera's block, the fraction is added on the GPU
@@ -99,6 +99,11 @@ final class TerrainPass {
 		p.set(ValueLayout.JAVA_FLOAT, 196, (float) (camBlock.getY() - cam.y));
 		p.set(ValueLayout.JAVA_FLOAT, 200, (float) (camBlock.getZ() - cam.z));
 		p.set(ValueLayout.JAVA_FLOAT, 204, 0f);
+		Vector3fc skyColor = level.skyRenderState.skyColor;
+		p.set(ValueLayout.JAVA_FLOAT, 208, skyColor != null ? skyColor.x() : fog.color.x);
+		p.set(ValueLayout.JAVA_FLOAT, 212, skyColor != null ? skyColor.y() : fog.color.y);
+		p.set(ValueLayout.JAVA_FLOAT, 216, skyColor != null ? skyColor.z() : fog.color.z);
+		p.set(ValueLayout.JAVA_FLOAT, 220, TilelightConfig.get().exposure);
 	}
 
 	private int gather(MetalExports exports, List<SectionRenderDispatcher.RenderSection> sections, SectionRenderDispatcher dispatcher,

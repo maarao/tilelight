@@ -15,7 +15,7 @@ import org.joml.Vector3fc;
  * translucent pass. Needs Gate 3 Metal terrain. Configured by {@code water} in {@link TilelightConfig}.
  */
 final class WaterPass {
-	private static final long PARAMS_SIZE = 176; // tl_water_params in tilelight.h
+	private static final long PARAMS_SIZE = 192; // tl_water_params in tilelight.h
 	private static final float STRENGTH = 0.85f;
 	private static final float MAX_DISTANCE = 64f;
 	private static final int STEPS = 24;
@@ -49,6 +49,13 @@ final class WaterPass {
 		p.set(ValueLayout.JAVA_FLOAT, 164, STEPS);
 		p.set(ValueLayout.JAVA_FLOAT, 168, (float) (this.frame++ % 64));
 		p.set(ValueLayout.JAVA_FLOAT, 172, 0f);
+		float a = level.skyRenderState.sunAngle;
+		float sunY = (float) Math.cos(a);
+		p.set(ValueLayout.JAVA_FLOAT, 176, (float) -Math.sin(a));
+		p.set(ValueLayout.JAVA_FLOAT, 180, sunY);
+		p.set(ValueLayout.JAVA_FLOAT, 184, 0f);
+		float up = Math.clamp((sunY + 0.02f) / 0.1f, 0f, 1f);
+		p.set(ValueLayout.JAVA_FLOAT, 188, up * level.skyRenderState.rainBrightness);
 		int rc = lib.interopSetWater(p, worldDepth);
 		if (rc != NativeLib.OK) {
 			Tilelight.LOG.error("tl_interop_set_water failed with code {}", rc);

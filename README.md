@@ -6,21 +6,22 @@ Minecraft keeps its own Vulkan (MoltenVK) renderer for the GUI, entities and
 presentation. Tilelight takes over parts of each frame on Metal, sharing images
 with Vulkan and handing off through GPU-side events (no CPU waits):
 
-- **Opaque terrain** drawn and lit on Metal: sky light, shadow-mapped sun,
-  block light, vanilla-matching fog.
+- **Opaque terrain** drawn and lit on Metal in linear HDR: warm shadow-mapped
+  sun, cool sky fill, moonlight, block light, filmic tonemap, vanilla-matching fog.
 - **Sun shadows** from a 2048² shadow map drawn straight from Minecraft's
   chunk buffers.
 - **Volumetric haze and sun shafts**, ray-marched through the shadow map.
-- **Water reflections** in screen space, with a sky fallback and Fresnel.
+- **Water reflections** in screen space, with a sky fallback, Fresnel and sun glints.
+- **Bloom** around the sun and bright highlights.
 - **Render scale + anti-aliasing:** our TAA at internal resolution plus MetalFX
   spatial upscaling by default; MetalFX temporal or spatial-only as options.
 
 On a base M5 MacBook Pro at native 3456×2168, render distance 16, all of the
-above runs at ~133 fps on the reference scene with TAA (~147 fps without
-anti-aliasing), against ~160-168 fps for vanilla. Details, measurements and the reasoning behind every
+above runs at ~125 fps on the reference scene, against ~158 fps for vanilla. Details, measurements and the reasoning behind every
 choice: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-![Tilelight on the reference scene](docs/final.png)
+![Sunset](docs/look2-sunset.png)
+![Golden hour](docs/look2-golden.png)
 
 ## Use
 
@@ -40,7 +41,9 @@ Settings live in `config/tilelight.json` (written on first run):
 | `terrain`    | `true`    | Metal terrain and lighting (otherwise vanilla terrain + shadow overlay) |
 | `sameQueue`  | `true`    | run on MoltenVK's queue (faster); `false` uses a separate queue |
 | `shadows`, `volumetric`, `water` | `true` | effects                               |
-| `fogDensity` | `0.004`   | haze density per block                                          |
+| `fogDensity` | `0.0025`  | haze density per block                                          |
+| `exposure`   | `1.0`     | brightness of Metal-lit terrain before tonemapping              |
+| `bloom`      | `0.35`    | glow around the sun and highlights; `0` turns it off            |
 
 Not compatible with Sodium, Iris or other mods that replace terrain rendering.
 

@@ -16,6 +16,7 @@
 #include "terrain.h"
 #include "volumetric.h"
 #include "water.h"
+#include "bloom.h"
 #include "temporal.h"
 #include "tilelight.h"
 
@@ -60,6 +61,7 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		if (rc == TL_OK) rc = tl_terrain_init(device, library);
 		if (rc == TL_OK) rc = tl_volumetric_init(device, library);
 		if (rc == TL_OK) rc = tl_water_init(device, library);
+		if (rc == TL_OK) rc = tl_bloom_init(device, library);
 		if (rc == TL_OK) rc = tl_temporal_init(device, library);
 		if (rc != TL_OK) return rc;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
@@ -167,6 +169,7 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		int32_t rc = in ? tl_shadows_encode_apply(cb, in) : TL_OK;
 		if (rc == TL_OK && in) rc = tl_water_encode(cb, in);
 		if (rc == TL_OK && in) rc = tl_volumetric_encode(cb, in);
+		if (rc == TL_OK && in) rc = tl_bloom_encode(cb, in);
 		if (rc == TL_OK) switch (mode) {
 		case TL_MODE_NOOP:
 			break;
@@ -269,6 +272,7 @@ void tl_interop_shutdown(void *shared_event) {
 	tl_terrain_shutdown();
 	tl_volumetric_shutdown();
 	tl_water_shutdown();
+	tl_bloom_shutdown();
 	tl_temporal_shutdown();
 	if (shared_event) {
 		((__bridge id<MTLSharedEvent>)shared_event).signaledValue = UINT64_MAX;

@@ -34,7 +34,11 @@ public final class TilelightConfig {
 	 */
 	public boolean sameQueue = true;
 	/** Haze density per block. */
-	public float fogDensity = 0.004f;
+	public float fogDensity = 0.0025f;
+	/** Glow around the sun and bright highlights, 0 = off. */
+	public float bloom = 0.35f;
+	/** Brightness of Metal-lit terrain before tonemapping; raise for a brighter, more washed look. */
+	public float exposure = 1.0f;
 
 	private static TilelightConfig instance;
 
@@ -76,6 +80,8 @@ public final class TilelightConfig {
 		this.water = Boolean.parseBoolean(System.getProperty("tilelight.water", Boolean.toString(this.water)));
 		this.sameQueue = Boolean.parseBoolean(System.getProperty("tilelight.sameQueue", Boolean.toString(this.sameQueue)));
 		this.fogDensity = Float.parseFloat(System.getProperty("tilelight.fogDensity", Float.toString(this.fogDensity)));
+		this.bloom = Float.parseFloat(System.getProperty("tilelight.bloom", Float.toString(this.bloom)));
+		this.exposure = Float.parseFloat(System.getProperty("tilelight.exposure", Float.toString(this.exposure)));
 	}
 
 	private void validate() {

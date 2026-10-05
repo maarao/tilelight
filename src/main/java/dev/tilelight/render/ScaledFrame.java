@@ -309,6 +309,8 @@ public final class ScaledFrame {
 	 */
 	public void terrainHandoff(LevelRenderState level) {
 		if (!this.swapped || this.state != State.ACTIVE || !this.terrain.enabled()) return;
+		// The lighting model is the Overworld's (sun, sky); elsewhere vanilla draws terrain.
+		if (level.skyRenderState.skybox != net.minecraft.world.level.dimension.DimensionType.Skybox.OVERWORLD) return;
 		Substitute main = this.substitutes.getFirst();
 		boolean shadowsOn = this.shadows.appliesTo(level);
 		long t0 = System.nanoTime();
@@ -532,6 +534,7 @@ public final class ScaledFrame {
 				Tilelight.LOG.warn("Could not get MoltenVK's command queue; using a separate Metal queue");
 			}
 		}
+		this.lib.interopSetBloom(0.78f, 0.2f, TilelightConfig.get().bloom);
 		Tilelight.LOG.info("Metal interop active: mode {}, render scale {}, {} queue", this.mode, this.scale,
 				this.sameQueue ? "shared" : "separate");
 		this.state = State.ACTIVE;

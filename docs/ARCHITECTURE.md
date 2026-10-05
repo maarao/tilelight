@@ -606,6 +606,46 @@ How it looks:
 - Not tested: moving entities, which have no motion vectors and may smear
   slightly.
 
+## The look: HDR lighting, bloom, glints (2026-10-05)
+
+The first version lit terrain in vanilla's sRGB space with mild values; it read
+as "vanilla, a bit hazier" (`docs/look-lake.png` vs `docs/look-lake-vanilla.png`).
+Now:
+
+- **Linear HDR lighting + filmic tonemap.** Atlas colour is linearised, and
+  vanilla's baked Overworld face shading (`CardinalLighting.DEFAULT`) is
+  divided out on axis-aligned faces so the sun does the shaping.
+  - Light: warm sun (orange near the horizon), shadowed; cool sky fill from
+    vanilla's sky colour; warm block light.
+  - At night: cool moonlight from opposite the sun (unshadowed) plus a dim
+    blue fill, since vanilla's night sky colour is nearly black.
+  - Tonemap: ACES fit, with bright, strongly tinted surfaces pulled slightly
+    toward luminance (sunlit leaves otherwise went neon).
+  - Fog is still applied in display space, so far terrain meets vanilla's
+    untonemapped sky seamlessly.
+- **Bloom:** quarter-res bright-pass extract, MPS Gaussian blur (sigma 6),
+  screen-blended back before TAA.
+- **Sun glint on water:** a tight specular highlight of the sun in the
+  reflection, which bloom spreads into a glow.
+- **Lighter haze:** default density 0.004 -> 0.0025.
+- **Metal terrain is Overworld-only now;** vanilla draws the Nether and End
+  (the model assumes a sun and a sky).
+- **New settings:** `exposure` (1.0) and `bloom` (0.35).
+
+Screenshots: `docs/look2-lake.png`, `look2-golden.png`, `look2-sunset.png`,
+`look2-night.png`.
+
+Cost, interleaved, three runs each (`tools/bench/results/2026-10-05-look.txt`):
+
+| Mode                          | FPS |
+|-------------------------------|-----|
+| Vanilla                       | 158 |
+| Tilelight, bloom off          | 127 |
+| Tilelight defaults (TAA etc.) | 125 |
+
+Vanilla-drawn things (entities, water surface colour, particles, hand) keep
+vanilla's lighting, so they can look slightly flat next to Metal-lit terrain.
+
 ## Known issues
 
 From GPT-6.1 Sol's audit of Gate 1 (2026-10-04). Findings 1, 2, 3, 5 and 6

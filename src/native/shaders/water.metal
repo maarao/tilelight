@@ -14,6 +14,7 @@ struct WaterParams {
 	float4 sky_horizon;      // rgb
 	float4 sky_zenith;       // rgb, a = reflection strength
 	float4 misc;             // x max distance, y steps, z frame index
+	float4 sun;              // xyz towards the sun, w = sun glint intensity (0 at night or in rain)
 };
 
 struct FullscreenOut {
@@ -80,5 +81,10 @@ fragment half4 tl_water_fs(FullscreenOut in [[stage_in]],
 	}
 
 	float strength = p.sky_zenith.a * fresnel;
-	return half4(half3(mix(float3(color.rgb), refl, strength)), color.a);
+	float3 result = mix(float3(color.rgb), refl, strength);
+	// Sun glint: a tight highlight where the water mirrors the sun (bloom spreads it into a glow).
+	float glint = pow(saturate(dot(r, p.sun.xyz)), 900.0) * 6.0 + pow(saturate(dot(r, p.sun.xyz)), 60.0) * 0.15;
+	float3 sun_tint = mix(float3(1.0, 0.55, 0.25), float3(1.0, 0.95, 0.85), smoothstep(0.0, 0.4, p.sun.y));
+	result += sun_tint * glint * p.sun.w;
+	return half4(half3(saturate(result)), color.a);
 }
