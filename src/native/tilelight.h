@@ -95,4 +95,6 @@ int32_t tl_interop_set_shadows(const tl_shadow_params *params, const tl_draw *dr
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);
 
-void tl_interop_shutdown(void);
+// Drains our queue and releases everything. If shared_event is non-NULL it is first signalled to the
+// maximum value, so command buffers waiting on a Vulkan signal that never came can finish.
+void tl_interop_shutdown(void *shared_event);

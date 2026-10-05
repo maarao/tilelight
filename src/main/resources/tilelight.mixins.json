@@ -7,6 +7,7 @@
 		"FrontendGpuDeviceAccessor",
 		"GameRendererMixin",
 		"LevelRendererAccessor",
+		"LevelRendererMixin",
 		"RenderTargetAccessor",
 		"VulkanFeatureSetsMixin",
 		"VulkanGpuBufferDirectAccessor"

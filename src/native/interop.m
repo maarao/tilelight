@@ -194,8 +194,11 @@ int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *e
 	return TL_OK;
 }
 
-void tl_interop_shutdown(void) {
+void tl_interop_shutdown(void *shared_event) {
 	tl_shadows_shutdown();
+	if (shared_event) {
+		((__bridge id<MTLSharedEvent>)shared_event).signaledValue = UINT64_MAX;
+	}
 	if (g_queue) {
 		// Command buffers retain what they use, but let in-flight work finish before the
 		// caller destroys the Vulkan objects behind those Metal textures and the event.

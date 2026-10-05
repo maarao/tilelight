@@ -80,6 +80,8 @@ public final class ScaledFrame {
 	private GpuTexture worldDepth;
 	// Whether the hand was drawn into the 3D HUD target's depth instead of the main depth.
 	private boolean handInHudDepth;
+	// Set once the world depth was copied this frame (always-on-top features may clear it before the hand).
+	private boolean worldDepthCopied;
 
 	private ScaledFrame() {
 		String m = System.getProperty("tilelight.mode", "metalfx");
@@ -129,6 +131,7 @@ public final class ScaledFrame {
 			s.swapIn(w, h);
 		}
 		this.swapped = true;
+		this.worldDepthCopied = false;
 
 		// GameRenderer cleared the native main target; do the same for ours (reverse-Z: depth clears to 0).
 		Substitute m = this.substitutes.getFirst();
@@ -140,8 +143,18 @@ public final class ScaledFrame {
 	 * post effect is active. Keeps the world depth for the Metal passes.
 	 */
 	public void beforeHud(RenderTarget main, boolean handInHudDepth) {
-		if (!this.swapped || !this.shadows.enabled()) return;
 		this.handInHudDepth = handInHudDepth;
+		copyWorldDepth(main);
+	}
+
+	/** Called before always-on-top features (debug gizmos), which clear the main depth when drawn. */
+	public void beforeAlwaysOnTop(RenderTarget main) {
+		copyWorldDepth(main);
+	}
+
+	private void copyWorldDepth(RenderTarget main) {
+		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied) return;
+		this.worldDepthCopied = true;
 		GpuTexture depth = main.getDepthTexture();
 		int w = depth.getWidth(0);
 		int h = depth.getHeight(0);
@@ -168,7 +181,7 @@ public final class ScaledFrame {
 			restoreAll();
 		}
 
-		if (in != null && this.shadows.enabled() && this.worldDepth != null) {
+		if (in != null && this.shadows.appliesTo(level) && this.worldDepthCopied) {
 			// The hand's depth target holds only the hand (it is cleared first); it masks the hand out.
 			Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
 			this.shadows.submit(this.lib, this.exports, level, this.exports.texture(this.worldDepth),
@@ -213,7 +226,9 @@ public final class ScaledFrame {
 			this.vulkanDevice.graphicsQueue().waitIdle();
 		}
 		if (this.lib != null) {
-			this.lib.interopShutdown(); // waits for our own Metal queue to drain
+			// Releases any Metal work still waiting on a Vulkan signal that was never submitted,
+			// then waits for our own Metal queue to drain.
+			this.lib.interopShutdown(this.sharedEvent);
 		}
 		for (Substitute s : this.substitutes) {
 			s.closeLow();
@@ -357,7 +372,7 @@ public final class ScaledFrame {
 			int vr = VK10.vkCreateSemaphore(device, create, null, handle);
 			if (vr != VK10.VK_SUCCESS) {
 				Tilelight.LOG.error("vkCreateSemaphore failed: {}", vr);
-				this.lib.interopShutdown();
+				this.lib.interopShutdown(0L);
 				return false;
 			}
 			this.semaphore = handle[0];
@@ -367,7 +382,7 @@ public final class ScaledFrame {
 				Tilelight.LOG.error("MoltenVK did not export an MTLSharedEvent for the timeline semaphore");
 				VK10.vkDestroySemaphore(device, this.semaphore, null);
 				this.semaphore = 0L;
-				this.lib.interopShutdown();
+				this.lib.interopShutdown(0L);
 				return false;
 			}
 		}

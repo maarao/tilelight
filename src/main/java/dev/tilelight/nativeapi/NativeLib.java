@@ -69,7 +69,7 @@ public final class NativeLib {
 						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid());
+		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 		this.metallib = dir.resolve(METALLIB);
 	}
 
@@ -196,9 +196,10 @@ public final class NativeLib {
 		}
 	}
 
-	public void interopShutdown() {
+	/** Shuts interop down; if sharedEvent is non-zero it is signalled first so no command buffer waits forever. */
+	public void interopShutdown(long sharedEvent) {
 		try {
-			interopShutdown.invokeExact();
+			interopShutdown.invokeExact(MemorySegment.ofAddress(sharedEvent));
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

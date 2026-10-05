@@ -318,6 +318,44 @@ per-pixel effects are added (Gates 3-4). Two things to watch:
 - Bar: correct shadow map, and 1.5 ms or less for a 2048^2 cascade set with
   cached far cascades.
 
+**Gate 2 result (2026-10-04): PASS.** What was built:
+
+- **Shadow map:** a 2048^2 sun map drawn from vanilla's own section buffers.
+  SOLID and alpha-tested CUTOUT casters within 80 blocks; the map is redrawn
+  every 8 frames, or sooner when the sun or camera moves enough.
+- **Apply pass:** a 4-tap PCF pass at 67% scale darkens shadowed pixels of
+  vanilla's image before MetalFX.
+
+Interleaved runs (run 1 of each mode discarded as warm-up;
+`tools/bench/results/2026-10-04-gate2.txt`):
+
+| Mode                          | GPU ms/frame | FPS   |
+|-------------------------------|--------------|-------|
+| Vanilla, native               | 6.24         | 157   |
+| MetalFX 67%                   | 5.98         | 149   |
+| MetalFX 67% + shadows         | 6.49         | 138   |
+
+Shadows cost about 0.5 ms of GPU time, against the 1.5 ms bar. Screenshot:
+`docs/gate2-shadows.png`.
+
+Limitations, which Gate 3 removes:
+
+- Shadows are an overlay on vanilla's already-lit colour, so there is no real
+  sun term, and caves under covered terrain get darkened too.
+- There's no G-buffer, so normals come from depth derivatives.
+
+Sol's Gate 2 audit:
+
+- Found no chunk-buffer race, ABI mismatch or wrong MTLBuffer offset (it
+  checked against MoltenVK 1.4.2 source).
+- Confirmed and now fixed:
+  - the top section row was skipped (`maxSectionY` is inclusive);
+  - shadows ran outside the Overworld sky;
+  - debug gizmos clear depth before our copy;
+  - a failed submit poisoned the cached map;
+  - a shutdown hang if Metal waits on a never-submitted signal. Shutdown now
+    CPU-signals the shared event.
+
 **Gate 3: our opaque terrain pass + tile-memory lighting.**
 - Turn off vanilla's opaque/cutout terrain. Metal draws terrain into a
   memoryless G-buffer, then lights it in the same pass: sun with shadows, sky

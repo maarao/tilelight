@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
@@ -59,6 +60,11 @@ final class ShadowPass {
 
 	boolean enabled() {
 		return this.enabled;
+	}
+
+	/** Sun shadows only make sense under the Overworld sky; elsewhere sunAngle is stale or default. */
+	boolean appliesTo(LevelRenderState level) {
+		return this.enabled && level.skyRenderState.skybox == DimensionType.Skybox.OVERWORLD;
 	}
 
 	/**
@@ -113,6 +119,7 @@ final class ShadowPass {
 		int rc = lib.interopSetShadows(p, this.draws, count, worldDepth, handDepth, atlas);
 		if (rc != NativeLib.OK) {
 			Tilelight.LOG.error("tl_interop_set_shadows failed with code {}", rc);
+			this.mapCamera = null; // the map was not redrawn; force a redraw next frame
 		}
 	}
 
@@ -123,7 +130,7 @@ final class ShadowPass {
 		try {
 			for (int dx = -RADIUS_SECTIONS; dx <= RADIUS_SECTIONS; dx++) {
 				for (int dz = -RADIUS_SECTIONS; dz <= RADIUS_SECTIONS; dz++) {
-					for (int sy = viewArea.minSectionY(); sy < viewArea.maxSectionY(); sy++) {
+					for (int sy = viewArea.minSectionY(); sy <= viewArea.maxSectionY(); sy++) { // max is inclusive
 						BlockPos origin = SectionPos.of(camSection.x() + dx, sy, camSection.z() + dz).origin();
 						SectionRenderDispatcher.RenderSection section = viewArea.getRenderSectionAt(origin);
 						// The view area wraps around; a stale slot holds a different section.
