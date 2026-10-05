@@ -50,6 +50,8 @@ public final class NativeLib {
 	private final MethodHandle interopSetVolumetric;
 	private final MethodHandle interopSetWater;
 	private final MethodHandle interopSetTemporal;
+	private final MethodHandle interopUseQueue;
+	private final MethodHandle interopTrackingReport;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -82,6 +84,10 @@ public final class NativeLib {
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopSetTemporal = bind(linker, lookup, "tl_interop_set_temporal",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopUseQueue = bind(linker, lookup, "tl_interop_use_queue",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
+		this.interopTrackingReport = bind(linker, lookup, "tl_interop_tracking_report",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -227,6 +233,25 @@ public final class NativeLib {
 	public int interopSetTemporal(MemorySegment params, long worldDepth, long handDepth) {
 		try {
 			return (int) interopSetTemporal.invokeExact(params, MemorySegment.ofAddress(worldDepth), MemorySegment.ofAddress(handDepth));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Commits our Metal work to this MTLCommandQueue (MoltenVK's) instead of our own. */
+	public int interopUseQueue(long mtlQueue) {
+		try {
+			return (int) interopUseQueue.invokeExact(MemorySegment.ofAddress(mtlQueue));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	public String interopTrackingReport() {
+		try (Arena arena = Arena.ofConfined()) {
+			MemorySegment buf = arena.allocate(512);
+			check((int) interopTrackingReport.invokeExact(buf, 512), "tl_interop_tracking_report");
+			return buf.getString(0);
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

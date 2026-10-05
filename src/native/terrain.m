@@ -132,7 +132,11 @@ int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws
 		if (!cb) return TL_ERR_NOT_COMMITTED;
 		cb.label = @"tilelight terrain";
 		id<MTLSharedEvent> event = (__bridge id<MTLSharedEvent>)shared_event;
-		[cb encodeWaitForEvent:event value:wait_value];
+		tl_interop_check_tracking((__bridge id<MTLTexture>)color_tex, "terrain colour");
+		tl_interop_check_tracking((__bridge id<MTLTexture>)depth_tex, "terrain depth");
+		tl_interop_check_tracking((__bridge id<MTLTexture>)atlas_tex, "block atlas");
+		if (draw_count > 0) tl_interop_check_tracking((__bridge id<MTLBuffer>)draws[0].vertex_buffer, "chunk vertex buffer");
+		if (wait_value) [cb encodeWaitForEvent:event value:wait_value];
 		int32_t rc = (color_tex && depth_tex && atlas_tex && draw_count >= 0) ? TL_OK : TL_ERR_BUFFER;
 		// The shadow map (if due this frame) must exist before terrain samples it.
 		if (rc == TL_OK) rc = tl_shadows_encode_map(cb);
@@ -143,7 +147,7 @@ int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws
 		// Terrain-only depth, so the end of the frame can tell where vanilla drew water over it.
 		if (rc == TL_OK) rc = tl_water_capture_terrain_depth(cb, (__bridge id<MTLTexture>)depth_tex);
 		// Always signal, even on error, so Vulkan's wait can never deadlock.
-		[cb encodeSignalEvent:event value:signal_value];
+		if (signal_value) [cb encodeSignalEvent:event value:signal_value];
 		tl_interop_track(cb);
 		[cb commit];
 		return rc;

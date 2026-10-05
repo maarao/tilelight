@@ -14,6 +14,7 @@ import org.lwjgl.util.vma.VmaAllocationInfo;
 import org.lwjgl.vulkan.EXTMetalObjects;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkExportMetalBufferInfoEXT;
+import org.lwjgl.vulkan.VkExportMetalCommandQueueInfoEXT;
 import org.lwjgl.vulkan.VkExportMetalDeviceInfoEXT;
 import org.lwjgl.vulkan.VkExportMetalObjectsInfoEXT;
 import org.lwjgl.vulkan.VkExportMetalSharedEventInfoEXT;
@@ -43,6 +44,16 @@ final class MetalExports {
 			VkExportMetalDeviceInfoEXT info = VkExportMetalDeviceInfoEXT.calloc(stack).sType$Default();
 			export(stack, info.address());
 			return info.mtlDevice();
+		}
+	}
+
+	/** The MTLCommandQueue MoltenVK submits Minecraft's graphics queue work to. */
+	long commandQueue() {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			VkExportMetalCommandQueueInfoEXT info = VkExportMetalCommandQueueInfoEXT.calloc(stack).sType$Default()
+					.queue(this.device.graphicsQueue().vkQueue());
+			export(stack, info.address());
+			return info.mtlCommandQueue();
 		}
 	}
 

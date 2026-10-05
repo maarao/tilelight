@@ -14,6 +14,7 @@ import dev.tilelight.TilelightConfig;
 import dev.tilelight.mixin.FrontendCommandEncoderAccessor;
 import dev.tilelight.mixin.FrontendGpuDeviceAccessor;
 import dev.tilelight.mixin.RenderTargetAccessor;
+import dev.tilelight.mixin.VulkanCommandEncoderAccessor;
 import dev.tilelight.nativeapi.NativeLib;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -50,6 +51,7 @@ import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
 public final class ScaledFrame {
 	private static final long ALL_COMMANDS = 0x10000L; // VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 	private static final int STATS_EVERY_FRAMES = 600;
+	private static final boolean QUEUE_EVENTS = Boolean.getBoolean("tilelight.queueEvents");
 	// Same usage as RenderTarget.createBuffers: copy src/dst, sampled, render attachment.
 	private static final int TARGET_USAGE = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC
 			| GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT;
@@ -82,6 +84,12 @@ public final class ScaledFrame {
 	private boolean swapped;
 
 	private long statFrames;
+	// Our Metal work goes on MoltenVK's queue: Vulkan work is flushed at each hand-off.
+	private boolean sameQueue;
+	private boolean trackingLogged;
+	// Render-thread CPU time spent in our code, and the time between frames, summed since the last stats line.
+	private long cpuShadowsNs, cpuGatherNs, cpuTerrainNativeNs, cpuEndOfFrameNs, framePeriodNs;
+	private long lastBeforeLevelNs;
 
 	// Copy of the world depth taken before vanilla clears the main depth to draw the hand.
 	private GpuTexture worldDepth;
@@ -120,6 +128,9 @@ public final class ScaledFrame {
 
 	/** Swaps low-resolution textures into main, 3D HUD and entity outline targets. */
 	public void beforeLevel(RenderTarget main, RenderTarget hud3d, RenderTarget entityOutline, Vector4fc clearColor) {
+		long now = System.nanoTime();
+		if (this.lastBeforeLevelNs != 0) this.framePeriodNs += now - this.lastBeforeLevelNs;
+		this.lastBeforeLevelNs = now;
 		restoreIfSwapped();
 		if (!ensureActive()) return;
 		// noop measures only the hand-off: render at native size and upscale nothing.
@@ -191,6 +202,7 @@ public final class ScaledFrame {
 			restoreAll();
 		}
 
+		long t0 = System.nanoTime();
 		boolean shadowsOn = in != null && this.shadows.appliesTo(level) && (this.terrainDrawn || this.worldDepthCopied);
 		if (shadowsOn != this.shadowsWereOn) {
 			this.shadowsWereOn = shadowsOn;
@@ -225,28 +237,38 @@ public final class ScaledFrame {
 					this.exports.texture(this.worldDepth), this.exports.texture(handTarget.lowDepth));
 		}
 
-		long worldDone = ++this.timeline;
-		long metalDone = ++this.timeline;
 		VulkanCommandEncoder encoder = vulkanEncoder();
-		encoder.signalSemaphore(this.semaphore, worldDone, ALL_COMMANDS);
+		long[] values = beginHandoff(encoder);
 		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : this.exports.texture(in), out == null ? 0L : this.exports.texture(out),
-				this.sharedEvent, worldDone, metalDone);
-		if (rc != NativeLib.ERR_NOT_COMMITTED) {
-			// A committed Metal command buffer signals metalDone even if encoding failed.
-			encoder.waitSemaphore(this.semaphore, metalDone, ALL_COMMANDS);
-		}
+				this.sharedEvent, values[0], values[1]);
+		endHandoff(encoder, rc, values[1]);
 		if (rc != NativeLib.OK) {
 			Tilelight.LOG.error("Metal upscale failed with code {}; turning Tilelight off", rc);
 			this.state = State.OFF;
 		}
 
+		this.cpuEndOfFrameNs += System.nanoTime() - t0;
+
 		if (++this.statFrames >= STATS_EVERY_FRAMES) {
+			long n = this.statFrames;
 			this.statFrames = 0;
 			NativeLib.InteropStats stats = this.lib.interopTakeStats();
 			if (stats.frames() > 0) {
 				Tilelight.LOG.info("interop: mode {} scale {}, Metal GPU {} us/frame over {} frames, {} errors",
 						this.mode, this.scale, stats.gpuNanos() / stats.frames() / 1000, stats.frames(), stats.errors());
 			}
+			if (this.sameQueue && !this.trackingLogged) {
+				this.trackingLogged = true;
+				String report = this.lib.interopTrackingReport();
+				Tilelight.LOG.info("Metal hazard tracking of shared resources: {}", report);
+				if (report.contains("UNTRACKED") && !QUEUE_EVENTS) {
+					Tilelight.LOG.warn("Some shared resources are untracked; ordering by queue alone may race");
+				}
+			}
+			Tilelight.LOG.info("cpu us/frame: frame period {}, shadows {}, terrain gather {}, terrain native {}, end of frame {}",
+					this.framePeriodNs / n / 1000, this.cpuShadowsNs / n / 1000, this.cpuGatherNs / n / 1000,
+					this.cpuTerrainNativeNs / n / 1000, this.cpuEndOfFrameNs / n / 1000);
+			this.framePeriodNs = this.cpuShadowsNs = this.cpuGatherNs = this.cpuTerrainNativeNs = this.cpuEndOfFrameNs = 0;
 		}
 	}
 
@@ -281,11 +303,16 @@ public final class ScaledFrame {
 		if (!this.swapped || this.state != State.ACTIVE || !this.terrain.enabled()) return;
 		Substitute main = this.substitutes.getFirst();
 		boolean shadowsOn = this.shadows.appliesTo(level);
+		long t0 = System.nanoTime();
 		if (shadowsOn) {
 			this.shadows.submit(this.lib, this.exports, level, false, 0L, 0L);
 		}
+		long t1 = System.nanoTime();
 		this.terrain.prepare(this.exports, level, ShadowPass.levelProjection, shadowsOn ? this.shadows.sample() : null,
 				level.skyRenderState.sunAngle);
+		long t2 = System.nanoTime();
+		this.cpuShadowsNs += t1 - t0;
+		this.cpuGatherNs += t2 - t1;
 		if (!this.terrain.complete()) {
 			// Some section could not be handed to Metal; vanilla draws all terrain rather than leave holes.
 			return;
@@ -293,16 +320,13 @@ public final class ScaledFrame {
 		long atlas = this.exports.texture(net.minecraft.client.Minecraft.getInstance().getTextureManager()
 				.getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getTexture());
 
-		long beforeTerrain = ++this.timeline;
-		long terrainDone = ++this.timeline;
 		VulkanCommandEncoder encoder = vulkanEncoder();
-		encoder.signalSemaphore(this.semaphore, beforeTerrain, ALL_COMMANDS);
+		long[] values = beginHandoff(encoder);
 		int rc = this.lib.interopTerrain(this.terrain.params(), this.terrain.draws(), this.terrain.drawCount(),
-				this.exports.texture(main.lowColor), this.exports.texture(main.lowDepth), atlas, this.sharedEvent, beforeTerrain,
-				terrainDone);
-		if (rc != NativeLib.ERR_NOT_COMMITTED) {
-			encoder.waitSemaphore(this.semaphore, terrainDone, ALL_COMMANDS);
-		}
+				this.exports.texture(main.lowColor), this.exports.texture(main.lowDepth), atlas, this.sharedEvent, values[0],
+				values[1]);
+		endHandoff(encoder, rc, values[1]);
+		this.cpuTerrainNativeNs += System.nanoTime() - t2;
 		if (rc == NativeLib.OK) {
 			this.terrainDrawn = true;
 		} else {
@@ -479,9 +503,49 @@ public final class ScaledFrame {
 				return false;
 			}
 		}
-		Tilelight.LOG.info("Metal interop active: mode {}, render scale {}", this.mode, this.scale);
+		if (TilelightConfig.get().sameQueue) {
+			long queue = this.exports.commandQueue();
+			if (queue != 0L && this.lib.interopUseQueue(queue) == NativeLib.OK) {
+				this.sameQueue = true;
+			} else {
+				Tilelight.LOG.warn("Could not get MoltenVK's command queue; using a separate Metal queue");
+			}
+		}
+		Tilelight.LOG.info("Metal interop active: mode {}, render scale {}, {} queue", this.mode, this.scale,
+				this.sameQueue ? "shared" : "separate");
 		this.state = State.ACTIVE;
 		return true;
+	}
+
+	/**
+	 * Gets Vulkan's work so far ordered before the Metal command buffer about to be committed, and
+	 * returns the {wait, signal} event values for it (0 = none).
+	 *
+	 * <p>Separate queue: Vulkan signals a timeline value that Metal waits for on the GPU. Shared queue:
+	 * the Vulkan work recorded so far is submitted now, so MoltenVK commits it to the queue first; queue
+	 * order and Metal's hazard tracking then order the work, and events (which cost ~0.3 ms of GPU idle
+	 * each) are skipped unless {@code -Dtilelight.queueEvents=true}. Minecraft's frame pacing is left
+	 * alone: its end-of-frame submit still signals and waits as before.
+	 */
+	private long[] beginHandoff(VulkanCommandEncoder encoder) {
+		boolean events = !this.sameQueue || QUEUE_EVENTS;
+		long wait = events ? ++this.timeline : 0L;
+		long signal = events ? ++this.timeline : 0L;
+		if (events) encoder.signalSemaphore(this.semaphore, wait, ALL_COMMANDS);
+		if (this.sameQueue) {
+			VulkanCommandEncoderAccessor acc = (VulkanCommandEncoderAccessor) encoder;
+			acc.tilelight$endCommandBuffer();
+			acc.tilelight$submissionBuilder().close();
+			acc.tilelight$setSubmissionBuilder(acc.tilelight$device().graphicsQueue().beginSubmit());
+		}
+		return new long[] {wait, signal};
+	}
+
+	private void endHandoff(VulkanCommandEncoder encoder, int rc, long signal) {
+		// A committed Metal command buffer signals even if encoding failed, so this wait cannot hang.
+		if (signal != 0L && rc != NativeLib.ERR_NOT_COMMITTED) {
+			encoder.waitSemaphore(this.semaphore, signal, ALL_COMMANDS);
+		}
 	}
 
 	private static VulkanCommandEncoder vulkanEncoder() {

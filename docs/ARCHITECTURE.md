@@ -384,7 +384,7 @@ Interleaved runs (`tools/bench/results/2026-10-04-gate3-culled.txt`):
 | Vanilla, native                                     | 6.19         | 159.0 | 98.4%    |
 | Metal terrain + lighting + shadows + MetalFX (67%)  | 5.36         | 143.5 | 77%      |
 
-**Open problem: cross-queue idle gaps.** The two Vulkan<->Metal hand-offs leave
+**Open problem (fixed 2026-10-05, see "Removing the hand-off idle time"): cross-queue idle gaps.** The two Vulkan<->Metal hand-offs leave
 the GPU idle about 23% of the frame, so FPS is about 10% under vanilla even
 though GPU work is 14% lower.
 
@@ -509,6 +509,45 @@ RenderPearl (option A). Backends receive SPIR-V, and the game ships SPIRV-Cross.
 5. **License: Apache-2.0** (chosen 2026-10-04; explicit patent grant).
 4. **Minimum hardware.** M1 and later (Metal 3) for the main renderer.
    Ray-tracing features only on M3 and later.
+
+## Removing the hand-off idle time (2026-10-05)
+
+The Gate 3 result left the GPU only about 77-80% busy, about 10% below
+vanilla's FPS. What the measurements showed (`tools/bench/gaps.py`,
+`tools/bench/timeline.py`, and render-thread timing from `FrameTimer`):
+
+- **Not CPU-bound.** The render thread records a frame in about 1.2 ms
+  (vanilla: 0.85 ms) and waits about 5 ms for the GPU.
+- **Each Vulkan<->Metal transition left about 250-350 us of GPU idle.** That
+  is four per frame, about 1.2 ms of a 7 ms frame.
+- **Moving our command buffers onto MoltenVK's own `MTLCommandQueue` alone
+  changed nothing.** The cost is the `MTLSharedEvent` wait/signal itself, not
+  the queue switch.
+- **Correction to earlier numbers:** a command buffer blocked on
+  `encodeWaitForEvent` counts as GPU-busy in Metal System Trace. Tilelight's
+  "GPU ms/frame" figures in Gates 1-5 included that waiting. Compare FPS
+  instead.
+
+Fix (config `sameQueue`, default on):
+
+- Our Metal work is committed to MoltenVK's queue.
+- At each hand-off, the Vulkan work recorded so far is submitted early: the
+  current `VulkanQueue.Submission` is closed and a new one begun. This leaves
+  Minecraft's end-of-frame submit and frame pacing untouched.
+- No events are used. Commit order on the single queue plus Metal hazard
+  tracking order the work; every shared resource was checked at runtime to be
+  hazard-tracked (logged once per session).
+
+Interleaved, three runs each (`tools/bench/results/2026-10-05-shared-queue.txt`):
+
+| Mode                                    | FPS   | GPU busy |
+|-----------------------------------------|-------|----------|
+| Vanilla, native                         | 160   | 98.5%    |
+| Tilelight, separate queue + events      | 126.5 | 80%      |
+| Tilelight, shared queue, no events      | 154   | 98.7%    |
+
+Tilelight with terrain lighting, shadows, haze, water and MetalFX now runs
+within about 4% of vanilla.
 
 ## Known issues
 

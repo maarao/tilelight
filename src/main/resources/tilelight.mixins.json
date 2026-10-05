@@ -9,6 +9,8 @@
 		"LevelRendererAccessor",
 		"LevelRendererMixin",
 		"RenderTargetAccessor",
+		"VulkanCommandEncoderAccessor",
+		"VulkanCommandEncoderMixin",
 		"VulkanFeatureSetsMixin",
 		"VulkanGpuBufferDirectAccessor"
 	],

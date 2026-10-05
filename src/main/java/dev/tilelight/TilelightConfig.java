@@ -27,6 +27,11 @@ public final class TilelightConfig {
 	public boolean shadows = true;
 	public boolean volumetric = true;
 	public boolean water = true;
+	/**
+	 * Run our Metal work on MoltenVK's own command queue, in order with Minecraft's Vulkan work,
+	 * instead of a separate queue. Avoids ~0.3 ms of GPU idle per Vulkan/Metal switch.
+	 */
+	public boolean sameQueue = true;
 	/** Haze density per block. */
 	public float fogDensity = 0.004f;
 
@@ -68,6 +73,7 @@ public final class TilelightConfig {
 		this.shadows = Boolean.parseBoolean(System.getProperty("tilelight.shadows", Boolean.toString(this.shadows)));
 		this.volumetric = Boolean.parseBoolean(System.getProperty("tilelight.volumetric", Boolean.toString(this.volumetric)));
 		this.water = Boolean.parseBoolean(System.getProperty("tilelight.water", Boolean.toString(this.water)));
+		this.sameQueue = Boolean.parseBoolean(System.getProperty("tilelight.sameQueue", Boolean.toString(this.sameQueue)));
 		this.fogDensity = Float.parseFloat(System.getProperty("tilelight.fogDensity", Float.toString(this.fogDensity)));
 	}
 

@@ -8,6 +8,8 @@
 // The waits are GPU-side (MTLSharedEvent), so the CPU never blocks.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#include <string.h>
+#include <stdio.h>
 #import <MetalFX/MetalFX.h>
 #include <stdatomic.h>
 #include "shadows.h"
@@ -140,7 +142,10 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		id<MTLCommandBuffer> cb = tl_interop_new_command_buffer();
 		if (!cb) return TL_ERR_NOT_COMMITTED;
 		cb.label = @"tilelight frame";
-		[cb encodeWaitForEvent:event value:wait_value];
+		tl_interop_check_tracking(in, "world colour");
+		tl_interop_check_tracking(out, "native colour");
+		// wait_value 0: same queue as Vulkan, ordered by commit order and hazard tracking instead.
+		if (wait_value) [cb encodeWaitForEvent:event value:wait_value];
 
 		// Shadows darken the low-res colour before it is upscaled.
 		int32_t rc = in ? tl_shadows_encode_apply(cb, in) : TL_OK;
@@ -186,7 +191,7 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		}
 
 		// Always signal, even on error, so Vulkan's wait can never deadlock.
-		[cb encodeSignalEvent:event value:signal_value];
+		if (signal_value) [cb encodeSignalEvent:event value:signal_value];
 		tl_interop_track(cb);
 		[cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
 			if (done.status == MTLCommandBufferStatusCompleted) atomic_fetch_add(&g_frames, 1);
@@ -194,6 +199,35 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		[cb commit];
 		return rc;
 	}
+}
+
+// Logs once per texture role if MoltenVK made a texture untracked: dropping events would then race.
+static char g_tracking_report[512];
+
+int32_t tl_interop_tracking_report(char *buf, int32_t buf_len) {
+	if (buf_len <= 0) return TL_ERR_BUFFER;
+	strlcpy(buf, g_tracking_report, (size_t)buf_len);
+	return TL_OK;
+}
+
+void tl_interop_check_tracking(id<MTLResource> t, const char *what) {
+	static NSMutableSet<NSString *> *seen;
+	if (!t) return;
+	if (!seen) seen = [NSMutableSet set];
+	NSString *key = [NSString stringWithUTF8String:what];
+	if ([seen containsObject:key]) return;
+	[seen addObject:key];
+	char entry[96];
+	snprintf(entry, sizeof(entry), "%s%s=%s", g_tracking_report[0] ? ", " : "", what,
+	         t.hazardTrackingMode == MTLHazardTrackingModeUntracked ? "UNTRACKED" : "tracked");
+	strlcat(g_tracking_report, entry, sizeof(g_tracking_report));
+}
+
+int32_t tl_interop_use_queue(void *mtl_queue) {
+	if (!g_device) return TL_ERR_NOT_INITIALIZED;
+	if (!mtl_queue) return TL_ERR_NO_DEVICE;
+	g_queue = (__bridge id<MTLCommandQueue>)mtl_queue;
+	return TL_OK;
 }
 
 id<MTLCommandBuffer> tl_interop_new_command_buffer(void) {

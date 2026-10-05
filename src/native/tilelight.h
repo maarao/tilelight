@@ -52,6 +52,14 @@ enum {
 // Adopts Minecraft's MTLDevice (exported via VK_EXT_metal_objects) and creates our own queue on it.
 int32_t tl_interop_init(void *mtl_device, const char *metallib_path);
 
+// Commits all further interop work to mtl_queue (MoltenVK's queue for Minecraft's graphics queue)
+// instead of our own. The caller must then submit Vulkan work up to each hand-off before calling
+// tl_interop_frame/tl_interop_terrain, so that queue order matches the dependency order.
+int32_t tl_interop_use_queue(void *mtl_queue);
+
+// Which shared resources Metal tracks hazards for, as "name=tracked|UNTRACKED, ...".
+int32_t tl_interop_tracking_report(char *buf, int32_t buf_len);
+
 // Encodes and commits one command buffer on our queue: wait for shared_event >= wait_value, run mode
 // reading in_tex and writing out_tex, then set shared_event to signal_value. Never blocks the CPU.
 int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared_event, uint64_t wait_value,

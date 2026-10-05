@@ -16,8 +16,8 @@ with Vulkan and handing off through GPU-side events (no CPU waits):
   option.
 
 On a base M5 MacBook Pro at native 3456×2168, render distance 16, all of the
-above runs at ~127 fps (6.3 ms GPU per frame) on the reference scene. Vanilla
-runs at ~159 fps (6.2 ms). Details, measurements and the reasoning behind every
+above runs at ~154 fps on the reference scene, within about 4% of vanilla
+(~160 fps). Details, measurements and the reasoning behind every
 choice: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ![Tilelight on the reference scene](docs/final.png)
