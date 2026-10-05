@@ -1,0 +1,56 @@
+== g3b-off-0
+window 5.37 s
+java (85430)                             busy   5286.9 ms ( 98.4% of window) | 6.19 ms/frame over 854 frames (159.0 fps)
+    Compute      busy     13.9 ms = 0.02 ms/frame
+    Fragment     busy   3401.7 ms = 3.98 ms/frame
+    Vertex       busy   1977.1 ms = 2.32 ms/frame
+WindowServer (598)                       busy    441.4 ms (  8.2% of window) | 5.73 ms/frame over 77 frames (14.3 fps)
+== g3b-terrain-0
+window 5.36 s
+java (86494)                             busy   4115.0 ms ( 76.7% of window) | 5.39 ms/frame over 763 frames (142.3 fps)
+    Compute      busy     13.9 ms = 0.02 ms/frame
+    Fragment     busy   2598.8 ms = 3.41 ms/frame
+    Vertex       busy   1641.0 ms = 2.15 ms/frame
+WindowServer (598)                       busy    403.1 ms (  7.5% of window) | 5.30 ms/frame over 76 frames (14.2 fps)
+== g3b-off-1
+window 5.37 s
+java (88130)                             busy   5279.2 ms ( 98.3% of window) | 6.22 ms/frame over 849 frames (158.1 fps)
+    Compute      busy     14.3 ms = 0.02 ms/frame
+    Fragment     busy   3382.2 ms = 3.98 ms/frame
+    Vertex       busy   1987.1 ms = 2.34 ms/frame
+WindowServer (598)                       busy    457.3 ms (  8.5% of window) | 5.72 ms/frame over 80 frames (14.9 fps)
+== g3b-terrain-1
+window 5.36 s
+java (89427)                             busy   4132.2 ms ( 77.0% of window) | 5.35 ms/frame over 772 frames (143.9 fps)
+    Compute      busy     14.5 ms = 0.02 ms/frame
+    Fragment     busy   2574.0 ms = 3.33 ms/frame
+    Vertex       busy   1681.3 ms = 2.18 ms/frame
+WindowServer (598)                       busy    393.4 ms (  7.3% of window) | 5.18 ms/frame over 76 frames (14.2 fps)
+== g3b-off-2
+window 5.34 s
+java (91006)                             busy   5252.3 ms ( 98.3% of window) | 6.19 ms/frame over 848 frames (158.7 fps)
+    Compute      busy     14.1 ms = 0.02 ms/frame
+    Fragment     busy   3369.8 ms = 3.97 ms/frame
+    Vertex       busy   1967.0 ms = 2.32 ms/frame
+WindowServer (598)                       busy    458.9 ms (  8.6% of window) | 5.81 ms/frame over 79 frames (14.8 fps)
+== g3b-terrain-2
+window 5.43 s
+java (92111)                             busy   4181.7 ms ( 77.0% of window) | 5.36 ms/frame over 780 frames (143.5 fps)
+    Compute      busy     14.9 ms = 0.02 ms/frame
+    Fragment     busy   2628.4 ms = 3.37 ms/frame
+    Vertex       busy   1676.9 ms = 2.15 ms/frame
+WindowServer (598)                       busy    424.5 ms (  7.8% of window) | 5.11 ms/frame over 83 frames (15.3 fps)
+== g3b-off-3
+window 5.36 s
+java (94056)                             busy   5276.4 ms ( 98.5% of window) | 6.15 ms/frame over 858 frames (160.1 fps)
+    Compute      busy     14.3 ms = 0.02 ms/frame
+    Fragment     busy   3392.0 ms = 3.95 ms/frame
+    Vertex       busy   1966.6 ms = 2.29 ms/frame
+WindowServer (598)                       busy    441.5 ms (  8.2% of window) | 5.73 ms/frame over 77 frames (14.4 fps)
+== g3b-terrain-3
+window 5.37 s
+java (95280)                             busy   4121.5 ms ( 76.8% of window) | 5.33 ms/frame over 773 frames (144.1 fps)
+    Compute      busy     14.9 ms = 0.02 ms/frame
+    Fragment     busy   2564.0 ms = 3.32 ms/frame
+    Vertex       busy   1680.3 ms = 2.17 ms/frame
+WindowServer (598)                       busy    408.2 ms (  7.6% of window) | 5.30 ms/frame over 77 frames (14.3 fps)

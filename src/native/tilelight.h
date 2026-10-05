@@ -112,6 +112,22 @@ typedef struct {
 int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws, int32_t draw_count, void *color_tex,
                            void *depth_tex, void *atlas_tex, void *shared_event, uint64_t wait_value, uint64_t signal_value);
 
+// --- Gate 4: volumetric sun light, see volumetric.m ---
+
+// Matches VolumetricParams in shaders/volumetric.metal.
+typedef struct {
+	float inv_view_proj[16];
+	float shadow_sample[16];
+	float sun_dir_day[4];  // xyz towards the sun, w = daylight 0..1
+	float sun_color[4];    // rgb, a = intensity
+	float medium[4];       // density per block, height falloff per block, camera world y, max distance
+	float misc[4];         // anisotropy g, frame index, shadow texel size, steps
+} tl_volumetric_params;
+
+// Queues volumetric light for the next tl_interop_frame: marched against world_depth (the world's
+// low-res depth) and the current shadow map, composited before the upscale. Needs a valid shadow map.
+int32_t tl_interop_set_volumetric(const tl_volumetric_params *params, void *world_depth);
+
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);
 

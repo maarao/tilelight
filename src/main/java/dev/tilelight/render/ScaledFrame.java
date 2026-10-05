@@ -67,6 +67,7 @@ public final class ScaledFrame {
 	private MetalExports exports;
 	private final ShadowPass shadows = new ShadowPass();
 	private final TerrainPass terrain = new TerrainPass();
+	private final VolumetricPass volumetric = new VolumetricPass();
 	private long semaphore;
 	private long sharedEvent;
 	// Last value used on the timeline semaphore; every hand-off takes the next two.
@@ -159,7 +160,9 @@ public final class ScaledFrame {
 	}
 
 	private void copyWorldDepth(RenderTarget main) {
-		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied || this.terrainDrawn) return;
+		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied) return;
+		// The Gate 2 overlay and volumetrics need it; Metal terrain alone does not.
+		if (this.terrainDrawn && !this.volumetric.enabled()) return;
 		this.worldDepthCopied = true;
 		GpuTexture depth = main.getDepthTexture();
 		int w = depth.getWidth(0);

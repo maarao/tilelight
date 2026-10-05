@@ -46,6 +46,7 @@ public final class NativeLib {
 	private final MethodHandle interopFrame;
 	private final MethodHandle interopSetShadows;
 	private final MethodHandle interopTerrain;
+	private final MethodHandle interopSetVolumetric;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -72,6 +73,8 @@ public final class NativeLib {
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
 						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
 						ValueLayout.JAVA_LONG));
+		this.interopSetVolumetric = bind(linker, lookup, "tl_interop_set_volumetric",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -190,6 +193,15 @@ public final class NativeLib {
 			return (int) interopTerrain.invokeExact(params, draws, drawCount, MemorySegment.ofAddress(colorTexture),
 					MemorySegment.ofAddress(depthTexture), MemorySegment.ofAddress(atlasTexture), MemorySegment.ofAddress(sharedEvent),
 					waitValue, signalValue);
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Queues volumetric light for the next interopFrame; see tl_interop_set_volumetric. */
+	public int interopSetVolumetric(MemorySegment params, long worldDepth) {
+		try {
+			return (int) interopSetVolumetric.invokeExact(params, MemorySegment.ofAddress(worldDepth));
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

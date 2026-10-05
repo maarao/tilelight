@@ -364,6 +364,49 @@ Sol's Gate 2 audit:
   depth.
 - Bar: terrain + lighting at or below vanilla terrain cost +1 ms at 67%.
 
+**Gate 3 result (2026-10-04): PASS.** Metal draws vanilla's visible SOLID and
+CUTOUT sections at a second mid-frame hand-off (`LevelRenderer.prepareTranslucents`,
+after the sky and before the main render pass):
+
+- **Shading:** forward. Sky light, shadow-mapped sun and block light, plus
+  vanilla's fog.
+- **Output:** writes colour and reverse-Z depth, so vanilla's entities, water
+  and particles composite on top. Vanilla's opaque terrain group is skipped.
+- **Matches vanilla:** back faces culled with the same clockwise front faces;
+  clip-space Y negated to match Minecraft's Vulkan convention.
+- **Forward instead of a tile-memory G-buffer:** Apple's hidden-surface removal
+  already shades each opaque pixel about once.
+
+Interleaved runs (`tools/bench/results/2026-10-04-gate3-culled.txt`):
+
+| Mode                                                | GPU ms/frame | FPS   | GPU busy |
+|-----------------------------------------------------|--------------|-------|----------|
+| Vanilla, native                                     | 6.19         | 159.0 | 98.4%    |
+| Metal terrain + lighting + shadows + MetalFX (67%)  | 5.36         | 143.5 | 77%      |
+
+**Open problem: cross-queue idle gaps.** The two Vulkan<->Metal hand-offs leave
+the GPU idle about 23% of the frame, so FPS is about 10% under vanilla even
+though GPU work is 14% lower.
+
+Things to try:
+
+- Commit Metal work earlier so it is already queued when Vulkan signals.
+- Merge the two hand-offs.
+- Eventually, option A (no cross-queue sync at all).
+
+Not urgent against the 60 fps target (143 fps here), but it is the largest
+remaining inefficiency.
+
+Sol's Gate 3 audit found no ordering or timeline bug. Fixed:
+
+- stale terrain-skip flag after Tilelight turns off, and in panorama
+  captures;
+- unchecked encoder allocation;
+- silent holes when a section can't be exported (now falls back to vanilla);
+- double-sided terrain;
+- shadow map validity;
+- vanilla's exact CameraBlockPos/CameraOffset arithmetic for matching depth.
+
 **Gate 4: effects.**
 - Water with SSR and an environment fallback, volumetric fog, low-resolution
   clouds, AO, bloom/tonemap.
