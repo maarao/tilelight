@@ -22,6 +22,8 @@ import java.nio.file.StandardCopyOption;
  */
 public final class NativeLib {
 	public static final int OK = 0;
+	/** tl_interop_frame committed nothing, so the shared event will not be signalled. */
+	public static final int ERR_NOT_COMMITTED = -8;
 
 	public static final long CAP_RAYTRACING = 1L;
 	public static final long CAP_APPLE9 = 1L << 1;

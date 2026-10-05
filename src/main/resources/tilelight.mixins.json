@@ -6,6 +6,7 @@
 		"FrontendCommandEncoderAccessor",
 		"FrontendGpuDeviceAccessor",
 		"GameRendererMixin",
+		"LevelRendererAccessor",
 		"RenderTargetAccessor",
 		"VulkanFeatureSetsMixin"
 	],

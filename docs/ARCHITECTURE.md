@@ -340,3 +340,18 @@ RenderPearl (option A). Backends receive SPIR-V, and the game ships SPIRV-Cross.
 5. **License: Apache-2.0** (chosen 2026-10-04; explicit patent grant).
 4. **Minimum hardware.** M1 and later (Metal 3) for the main renderer.
    Ray-tracing features only on M3 and later.
+
+## Known issues
+
+From GPT-6.1 Sol's audit of Gate 1 (2026-10-04). Findings 1, 2, 3, 5 and 6
+were verified against the sources and fixed. These two are deferred:
+
+- **The `VK_EXT_metal_objects` exports skip the export-create structures the
+  spec requires** (VUIDs 06791/06795) on Minecraft's instance and images.
+  MoltenVK 1.4.2 returns the objects anyway; recheck on every MoltenVK
+  upgrade. The fix is to chain `VkExportMetalObjectCreateInfoEXT` into instance
+  creation and into `VulkanGpuTexture`'s `VkImageCreateInfo`.
+- **Device loss or a rejected `vkQueueSubmit2` after our Metal command buffer is
+  committed** leaves `worldDone` without a producer. Our queue would wait
+  forever. That is harmless to Minecraft, which is already failing, but it
+  isn't handled.

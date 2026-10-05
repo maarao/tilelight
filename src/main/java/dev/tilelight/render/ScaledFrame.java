@@ -2,6 +2,7 @@ package dev.tilelight.render;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.renderpearl.api.commands.CommandEncoder;
 import com.mojang.renderpearl.api.device.GpuDevice;
 import com.mojang.renderpearl.api.textures.GpuTexture;
@@ -15,7 +16,9 @@ import dev.tilelight.mixin.FrontendGpuDeviceAccessor;
 import dev.tilelight.mixin.RenderTargetAccessor;
 import dev.tilelight.nativeapi.NativeLib;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 import org.joml.Vector4fc;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.EXTMetalObjects;
@@ -33,9 +36,11 @@ import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
 /**
  * Gate 1: renders the world at a fraction of the window size and upscales it on Metal.
  *
- * <p>Before the world renders, the main render target's textures are swapped for low-resolution
- * ones. After vanilla post effects, the native textures are swapped back and the frame is handed to
- * Metal inside Minecraft's single per-frame Vulkan submission:
+ * <p>Before the world renders, every window-sized target the world pass touches (main, 3D HUD
+ * depth, entity outline) has its textures swapped for low-resolution ones; Minecraft's frame-graph
+ * targets follow the main target's size on their own. After vanilla post effects the native
+ * textures are swapped back and the frame is handed to Metal inside Minecraft's single per-frame
+ * Vulkan submission:
  *
  * <pre>
  *   Vulkan batch 1: world -> low-res colour, signal timeline semaphore = 2n+1
@@ -52,6 +57,9 @@ public final class ScaledFrame {
 	private static final long ALL_COMMANDS = 0x10000L; // VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 	private static final int PLANE_0 = 0x10; // VK_IMAGE_ASPECT_PLANE_0_BIT
 	private static final int STATS_EVERY_FRAMES = 600;
+	// Same usage as RenderTarget.createBuffers: copy src/dst, sampled, render attachment.
+	private static final int TARGET_USAGE = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC
+			| GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT;
 
 	private static final ScaledFrame INSTANCE = new ScaledFrame();
 
@@ -68,14 +76,9 @@ public final class ScaledFrame {
 	private long frameIndex;
 	private final Map<GpuTexture, Long> mtlTextures = new IdentityHashMap<>();
 
-	private GpuTexture lowColor, lowDepth;
-	private GpuTextureView lowColorView, lowDepthView;
-
-	// The main target's own textures while the low-res ones are swapped in.
+	/** One per window-sized target; the main target is first. Empty until the first frame. */
+	private List<Substitute> substitutes = List.of();
 	private boolean swapped;
-	private int nativeWidth, nativeHeight;
-	private GpuTexture nativeColor, nativeDepth;
-	private GpuTextureView nativeColorView, nativeDepthView;
 
 	private long statFrames;
 
@@ -92,48 +95,72 @@ public final class ScaledFrame {
 		if (!(s > 0f && s <= 1f)) {
 			throw new IllegalArgumentException("tilelight.scale must be in (0, 1], not " + s);
 		}
-		// noop measures only the hand-off, so it renders at full size: nothing would upscale.
-		this.scale = this.mode == NativeLib.MODE_NOOP ? 1f : s;
+		this.scale = s;
 	}
 
 	public static ScaledFrame get() {
 		return INSTANCE;
 	}
 
-	public void beforeLevel(RenderTarget main, Vector4fc clearColor) {
-		if (!ensureActive()) return;
-		int w = Math.max(1, Math.round(main.width * this.scale));
-		int h = Math.max(1, Math.round(main.height * this.scale));
-		ensureLowTextures(main, w, h);
-
-		this.nativeWidth = main.width;
-		this.nativeHeight = main.height;
-		this.nativeColor = main.getColorTexture();
-		this.nativeColorView = main.getColorTextureView();
-		this.nativeDepth = main.getDepthTexture();
-		this.nativeDepthView = main.getDepthTextureView();
-		swapInto(main, w, h, this.lowColor, this.lowColorView, this.lowDepth, this.lowDepthView);
-		this.swapped = true;
-
-		// GameRenderer cleared the native target; do the same for ours (reverse-Z, so depth clears to 0).
-		RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(this.lowColor, clearColor, this.lowDepth, 0.0);
+	/**
+	 * Called at the start of every GameRenderer.render() and before resize/close. If the previous
+	 * frame threw between beforeLevel and afterLevel, this puts the native textures back.
+	 */
+	public void restoreIfSwapped() {
+		if (!this.swapped) return;
+		Tilelight.LOG.warn("World rendering ended without afterLevel; restoring native targets");
+		restoreAll();
 	}
 
-	public void afterLevel(RenderTarget main) {
-		if (!this.swapped) return;
-		this.swapped = false;
-		swapInto(main, this.nativeWidth, this.nativeHeight, this.nativeColor, this.nativeColorView, this.nativeDepth,
-				this.nativeDepthView);
+	/** Swaps low-resolution textures into main, 3D HUD and entity outline targets. */
+	public void beforeLevel(RenderTarget main, RenderTarget hud3d, RenderTarget entityOutline, Vector4fc clearColor) {
+		restoreIfSwapped();
+		if (!ensureActive()) return;
+		// noop measures only the hand-off: render at native size and upscale nothing.
+		if (this.mode == NativeLib.MODE_NOOP) return;
+
+		int w = Math.max(1, Math.round(main.width * this.scale));
+		int h = Math.max(1, Math.round(main.height * this.scale));
+		if (this.substitutes.isEmpty()) {
+			this.substitutes = List.of(new Substitute(main, "Main"), new Substitute(hud3d, "HUD 3D"),
+					new Substitute(entityOutline, "Entity Outline"));
+			Tilelight.LOG.info("Rendering the world at {}x{} for a {}x{} window", w, h, main.width, main.height);
+		}
+		for (Substitute s : this.substitutes) {
+			s.swapIn(w, h);
+		}
+		this.swapped = true;
+
+		// GameRenderer cleared the native main target; do the same for ours (reverse-Z: depth clears to 0).
+		Substitute m = this.substitutes.getFirst();
+		RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(m.lowColor, clearColor, m.lowDepth, 0.0);
+	}
+
+	public void afterLevel() {
+		if (this.state != State.ACTIVE) return;
+		GpuTexture in;
+		GpuTexture out;
+		if (this.mode == NativeLib.MODE_NOOP) {
+			in = out = null;
+		} else {
+			if (!this.swapped) return;
+			Substitute m = this.substitutes.getFirst();
+			in = m.lowColor;
+			out = m.nativeColor;
+			restoreAll();
+		}
 
 		long n = this.frameIndex++;
 		long worldDone = 2 * n + 1;
 		long metalDone = 2 * n + 2;
 		VulkanCommandEncoder encoder = vulkanEncoder();
 		encoder.signalSemaphore(this.semaphore, worldDone, ALL_COMMANDS);
-		int rc = this.lib.interopFrame(this.mode, mtlTexture(this.lowColor), mtlTexture(this.nativeColor), this.sharedEvent,
-				worldDone, metalDone);
-		// The Metal command buffer signals metalDone even when it fails, so this wait cannot hang.
-		encoder.waitSemaphore(this.semaphore, metalDone, ALL_COMMANDS);
+		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : mtlTexture(in), out == null ? 0L : mtlTexture(out),
+				this.sharedEvent, worldDone, metalDone);
+		if (rc != NativeLib.ERR_NOT_COMMITTED) {
+			// A committed Metal command buffer signals metalDone even if encoding failed.
+			encoder.waitSemaphore(this.semaphore, metalDone, ALL_COMMANDS);
+		}
 		if (rc != NativeLib.OK) {
 			Tilelight.LOG.error("Metal upscale failed with code {}; turning Tilelight off", rc);
 			this.state = State.OFF;
@@ -143,51 +170,119 @@ public final class ScaledFrame {
 			this.statFrames = 0;
 			NativeLib.InteropStats stats = this.lib.interopTakeStats();
 			if (stats.frames() > 0) {
-				Tilelight.LOG.info("interop: mode {} {}x{} -> {}x{}, Metal GPU {} us/frame over {} frames, {} errors",
-						this.mode, this.lowColor.getWidth(0), this.lowColor.getHeight(0), this.nativeWidth, this.nativeHeight,
-						stats.gpuNanos() / stats.frames() / 1000, stats.frames(), stats.errors());
+				Tilelight.LOG.info("interop: mode {} scale {}, Metal GPU {} us/frame over {} frames, {} errors",
+						this.mode, this.scale, stats.gpuNanos() / stats.frames() / 1000, stats.frames(), stats.errors());
 			}
 		}
 	}
 
-	private static void swapInto(RenderTarget target, int width, int height, GpuTexture color, GpuTextureView colorView,
-			GpuTexture depth, GpuTextureView depthView) {
-		RenderTargetAccessor acc = (RenderTargetAccessor) target;
-		target.width = width;
-		target.height = height;
-		acc.tilelight$setColorTexture(color);
-		acc.tilelight$setColorTextureView(colorView);
-		acc.tilelight$setDepthTexture(depth);
-		acc.tilelight$setDepthTextureView(depthView);
-	}
-
-	private void ensureLowTextures(RenderTarget main, int w, int h) {
-		if (this.lowColor != null && this.lowColor.getWidth(0) == w && this.lowColor.getHeight(0) == h
-				&& this.lowColor.getFormat() == main.getColorTexture().getFormat()
-				&& this.lowDepth.getFormat() == main.getDepthTexture().getFormat()) {
-			return;
+	/** Releases everything we created on Minecraft's device. Called before GameRenderer closes. */
+	public void shutdown() {
+		restoreIfSwapped();
+		if (this.vulkanDevice != null) {
+			// Our textures and semaphore may still be in use by in-flight frames.
+			this.vulkanDevice.graphicsQueue().waitIdle();
 		}
-		closeLowTextures();
-		GpuDevice device = RenderSystem.getDevice();
-		// Same usage as RenderTarget.createBuffers: copy src/dst, sampled, render attachment.
-		int usage = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_TEXTURE_BINDING
-				| GpuTexture.USAGE_RENDER_ATTACHMENT;
-		this.lowColor = device.createTexture(() -> "Tilelight / Scaled Color", usage, main.getColorTexture().getFormat(), w, h, 1, 1);
-		this.lowColorView = device.createTextureView(this.lowColor);
-		this.lowDepth = device.createTexture(() -> "Tilelight / Scaled Depth", usage, main.getDepthTexture().getFormat(), w, h, 1, 1);
-		this.lowDepthView = device.createTextureView(this.lowDepth);
-		Tilelight.LOG.info("Rendering the world at {}x{} for a {}x{} window", w, h, main.width, main.height);
+		if (this.lib != null) {
+			this.lib.interopShutdown(); // waits for our own Metal queue to drain
+		}
+		for (Substitute s : this.substitutes) {
+			s.closeLow();
+		}
+		this.substitutes = List.of();
+		this.mtlTextures.clear();
+		if (this.semaphore != 0L) {
+			VK10.vkDestroySemaphore(this.vulkanDevice.vkDevice(), this.semaphore, null);
+			this.semaphore = 0L;
+		}
+		this.state = State.OFF;
 	}
 
-	private void closeLowTextures() {
-		if (this.lowColor == null) return;
-		this.mtlTextures.remove(this.lowColor);
-		this.lowColorView.close();
-		this.lowColor.close();
-		this.lowDepthView.close();
-		this.lowDepth.close();
-		this.lowColor = this.lowDepth = null;
-		this.lowColorView = this.lowDepthView = null;
+	private void restoreAll() {
+		for (Substitute s : this.substitutes) {
+			s.restore();
+		}
+		this.swapped = false;
+	}
+
+	/** A window-sized render target and the low-resolution textures swapped into it during the world pass. */
+	private final class Substitute {
+		private final RenderTarget target;
+		private final String label;
+		private @Nullable GpuTexture lowColor, lowDepth;
+		private @Nullable GpuTextureView lowColorView, lowDepthView;
+		private int nativeWidth, nativeHeight;
+		private @Nullable GpuTexture nativeColor, nativeDepth;
+		private @Nullable GpuTextureView nativeColorView, nativeDepthView;
+
+		Substitute(RenderTarget target, String label) {
+			this.target = target;
+			this.label = label;
+		}
+
+		void swapIn(int w, int h) {
+			ensureLow(w, h);
+			this.nativeWidth = this.target.width;
+			this.nativeHeight = this.target.height;
+			this.nativeColor = this.target.getColorTexture();
+			this.nativeColorView = this.target.getColorTextureView();
+			this.nativeDepth = this.target.getDepthTexture();
+			this.nativeDepthView = this.target.getDepthTextureView();
+			set(w, h, this.lowColor, this.lowColorView, this.lowDepth, this.lowDepthView);
+		}
+
+		void restore() {
+			set(this.nativeWidth, this.nativeHeight, this.nativeColor, this.nativeColorView, this.nativeDepth, this.nativeDepthView);
+		}
+
+		private void set(int w, int h, @Nullable GpuTexture color, @Nullable GpuTextureView colorView,
+				@Nullable GpuTexture depth, @Nullable GpuTextureView depthView) {
+			RenderTargetAccessor acc = (RenderTargetAccessor) this.target;
+			this.target.width = w;
+			this.target.height = h;
+			acc.tilelight$setColorTexture(color);
+			acc.tilelight$setColorTextureView(colorView);
+			acc.tilelight$setDepthTexture(depth);
+			acc.tilelight$setDepthTextureView(depthView);
+		}
+
+		private void ensureLow(int w, int h) {
+			GpuTexture color = this.target.getColorTexture();
+			GpuTexture depth = this.target.getDepthTexture();
+			if (matches(this.lowColor, color, w, h) && matches(this.lowDepth, depth, w, h)) return;
+			closeLow();
+			GpuDevice device = RenderSystem.getDevice();
+			if (color != null) {
+				GpuFormat format = color.getFormat();
+				this.lowColor = device.createTexture(() -> "Tilelight / " + this.label + " / Color", TARGET_USAGE, format, w, h, 1, 1);
+				this.lowColorView = device.createTextureView(this.lowColor);
+			}
+			if (depth != null) {
+				GpuFormat format = depth.getFormat();
+				this.lowDepth = device.createTexture(() -> "Tilelight / " + this.label + " / Depth", TARGET_USAGE, format, w, h, 1, 1);
+				this.lowDepthView = device.createTextureView(this.lowDepth);
+			}
+		}
+
+		/** True if low is a w x h stand-in for the target's texture (or both are absent). */
+		private static boolean matches(@Nullable GpuTexture low, @Nullable GpuTexture target, int w, int h) {
+			if (target == null) return low == null;
+			return low != null && low.getWidth(0) == w && low.getHeight(0) == h && low.getFormat() == target.getFormat();
+		}
+
+		void closeLow() {
+			if (this.lowColor != null) {
+				ScaledFrame.this.mtlTextures.remove(this.lowColor);
+				this.lowColorView.close();
+				this.lowColor.close();
+			}
+			if (this.lowDepth != null) {
+				this.lowDepthView.close();
+				this.lowDepth.close();
+			}
+			this.lowColor = this.lowDepth = null;
+			this.lowColorView = this.lowDepthView = null;
+		}
 	}
 
 	private boolean ensureActive() {
@@ -205,12 +300,12 @@ public final class ScaledFrame {
 			Tilelight.LOG.warn("Not on the Vulkan backend; Tilelight stays off. Set Graphics API to Vulkan.");
 			return false;
 		}
-		this.vulkanDevice = vk;
 		VkDevice device = vk.vkDevice();
 		if (!device.getCapabilities().VK_EXT_metal_objects) {
 			Tilelight.LOG.warn("VK_EXT_metal_objects is not enabled on Minecraft's device; Tilelight stays off");
 			return false;
 		}
+		this.vulkanDevice = vk;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			VkExportMetalDeviceInfoEXT deviceInfo = VkExportMetalDeviceInfoEXT.calloc(stack).sType$Default();
 			export(device, stack, deviceInfo.address());
@@ -231,6 +326,7 @@ public final class ScaledFrame {
 			int vr = VK10.vkCreateSemaphore(device, create, null, handle);
 			if (vr != VK10.VK_SUCCESS) {
 				Tilelight.LOG.error("vkCreateSemaphore failed: {}", vr);
+				this.lib.interopShutdown();
 				return false;
 			}
 			this.semaphore = handle[0];
@@ -241,6 +337,9 @@ public final class ScaledFrame {
 			this.sharedEvent = eventInfo.mtlSharedEvent();
 			if (this.sharedEvent == 0L) {
 				Tilelight.LOG.error("MoltenVK did not export an MTLSharedEvent for the timeline semaphore");
+				VK10.vkDestroySemaphore(device, this.semaphore, null);
+				this.semaphore = 0L;
+				this.lib.interopShutdown();
 				return false;
 			}
 		}
@@ -250,19 +349,20 @@ public final class ScaledFrame {
 	}
 
 	private long mtlTexture(GpuTexture texture) {
-		return this.mtlTextures.computeIfAbsent(texture, t -> {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				VkExportMetalTextureInfoEXT info = VkExportMetalTextureInfoEXT.calloc(stack).sType$Default()
-						.image(((VulkanGpuTexture) t).vkImage()).plane(PLANE_0);
-				export(this.vulkanDevice.vkDevice(), stack, info.address());
-				if (info.mtlTexture() == 0L) {
-					throw new IllegalStateException("MoltenVK did not export an MTLTexture for " + t.getLabel());
-				}
-				// Textures are recreated on resize; drop pointers to closed ones so the map stays small.
-				this.mtlTextures.keySet().removeIf(GpuTexture::isClosed);
-				return info.mtlTexture();
+		Long cached = this.mtlTextures.get(texture);
+		if (cached != null) return cached;
+		// Targets are recreated on resize; drop pointers to closed textures so the map stays small.
+		this.mtlTextures.keySet().removeIf(GpuTexture::isClosed);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			VkExportMetalTextureInfoEXT info = VkExportMetalTextureInfoEXT.calloc(stack).sType$Default()
+					.image(((VulkanGpuTexture) texture).vkImage()).plane(PLANE_0);
+			export(this.vulkanDevice.vkDevice(), stack, info.address());
+			if (info.mtlTexture() == 0L) {
+				throw new IllegalStateException("MoltenVK did not export an MTLTexture for " + texture.getLabel());
 			}
-		});
+			this.mtlTextures.put(texture, info.mtlTexture());
+			return info.mtlTexture();
+		}
 	}
 
 	private static void export(VkDevice device, MemoryStack stack, long chain) {

@@ -44,8 +44,10 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		g_device = device;
 		// Our own queue, not MoltenVK's: our command buffer is committed before Vulkan submits the
 		// frame and waits on the GPU for it, which would deadlock on a shared in-order queue.
-		g_queue = [device newCommandQueue];
-		g_queue.label = @"tilelight interop";
+		id<MTLCommandQueue> queue = [device newCommandQueue];
+		if (!queue) return TL_ERR_GPU;
+		queue.label = @"tilelight interop";
+		g_queue = queue;
 		g_library = library;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;
@@ -102,6 +104,7 @@ static int32_t ensure_scaler(id<MTLTexture> in, id<MTLTexture> out) {
 		td.usage = scaler.outputTextureUsage;
 		td.storageMode = MTLStorageModePrivate;
 		g_scaler_scratch = [g_device newTextureWithDescriptor:td];
+		if (!g_scaler_scratch) return TL_ERR_BUFFER;
 		NSLog(@"tilelight: output texture usage 0x%lx lacks MetalFX's 0x%lx; upscaling via a scratch texture",
 		      (unsigned long)out.usage, (unsigned long)scaler.outputTextureUsage);
 	}
@@ -124,6 +127,7 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		id<MTLTexture> out = (__bridge id<MTLTexture>)out_tex;
 
 		id<MTLCommandBuffer> cb = [g_queue commandBuffer];
+		if (!cb) return TL_ERR_NOT_COMMITTED;
 		cb.label = @"tilelight frame";
 		[cb encodeWaitForEvent:event value:wait_value];
 
@@ -187,6 +191,13 @@ int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *e
 }
 
 void tl_interop_shutdown(void) {
+	if (g_queue) {
+		// Command buffers retain what they use, but let in-flight work finish before the
+		// caller destroys the Vulkan objects behind those Metal textures and the event.
+		id<MTLCommandBuffer> fence = [g_queue commandBuffer];
+		[fence commit];
+		[fence waitUntilCompleted];
+	}
 	g_scaler = nil;
 	g_scaler_scratch = nil;
 	g_bilinear_pso = nil;

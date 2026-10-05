@@ -13,6 +13,7 @@ enum {
 	TL_ERR_GPU = -5,
 	TL_ERR_MISMATCH = -6,
 	TL_ERR_BUFFER = -7,
+	TL_ERR_NOT_COMMITTED = -8, // no command buffer was committed, so nothing will signal the event
 };
 
 // Creates the Metal device and command queue and loads the shader library at metallib_path.
