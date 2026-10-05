@@ -11,6 +11,7 @@
 #import <MetalFX/MetalFX.h>
 #include <stdatomic.h>
 #include "shadows.h"
+#include "terrain.h"
 #include "tilelight.h"
 
 static id<MTLDevice> g_device;
@@ -51,6 +52,7 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		g_queue = queue;
 		g_library = library;
 		int32_t rc = tl_shadows_init(device, library);
+		if (rc == TL_OK) rc = tl_terrain_init(device, library);
 		if (rc != TL_OK) return rc;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;
@@ -129,13 +131,13 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		id<MTLTexture> in = (__bridge id<MTLTexture>)in_tex;
 		id<MTLTexture> out = (__bridge id<MTLTexture>)out_tex;
 
-		id<MTLCommandBuffer> cb = [g_queue commandBuffer];
+		id<MTLCommandBuffer> cb = tl_interop_new_command_buffer();
 		if (!cb) return TL_ERR_NOT_COMMITTED;
 		cb.label = @"tilelight frame";
 		[cb encodeWaitForEvent:event value:wait_value];
 
 		// Shadows darken the low-res colour before it is upscaled.
-		int32_t rc = in ? tl_shadows_encode(cb, in) : TL_OK;
+		int32_t rc = in ? tl_shadows_encode_apply(cb, in) : TL_OK;
 		if (rc == TL_OK) switch (mode) {
 		case TL_MODE_NOOP:
 			break;
@@ -174,17 +176,28 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 
 		// Always signal, even on error, so Vulkan's wait can never deadlock.
 		[cb encodeSignalEvent:event value:signal_value];
+		tl_interop_track(cb);
 		[cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
-			if (done.status == MTLCommandBufferStatusCompleted) {
-				atomic_fetch_add(&g_gpu_ns_total, (int64_t)((done.GPUEndTime - done.GPUStartTime) * 1e9));
-				atomic_fetch_add(&g_frames, 1);
-			} else {
-				atomic_fetch_add(&g_errors, 1);
-			}
+			if (done.status == MTLCommandBufferStatusCompleted) atomic_fetch_add(&g_frames, 1);
 		}];
 		[cb commit];
 		return rc;
 	}
+}
+
+id<MTLCommandBuffer> tl_interop_new_command_buffer(void) {
+	return g_queue ? [g_queue commandBuffer] : nil;
+}
+
+// Counts the GPU time of every command buffer we commit (terrain and end-of-frame) per frame.
+void tl_interop_track(id<MTLCommandBuffer> cb) {
+	[cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
+		if (done.status == MTLCommandBufferStatusCompleted) {
+			atomic_fetch_add(&g_gpu_ns_total, (int64_t)((done.GPUEndTime - done.GPUStartTime) * 1e9));
+		} else {
+			atomic_fetch_add(&g_errors, 1);
+		}
+	}];
 }
 
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors) {
@@ -196,6 +209,7 @@ int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *e
 
 void tl_interop_shutdown(void *shared_event) {
 	tl_shadows_shutdown();
+	tl_terrain_shutdown();
 	if (shared_event) {
 		((__bridge id<MTLSharedEvent>)shared_event).signaledValue = UINT64_MAX;
 	}

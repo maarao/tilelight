@@ -45,6 +45,7 @@ public final class NativeLib {
 	private final MethodHandle interopInit;
 	private final MethodHandle interopFrame;
 	private final MethodHandle interopSetShadows;
+	private final MethodHandle interopTerrain;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -67,6 +68,10 @@ public final class NativeLib {
 		this.interopSetShadows = bind(linker, lookup, "tl_interop_set_shadows",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
 						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+		this.interopTerrain = bind(linker, lookup, "tl_interop_terrain",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+						ValueLayout.JAVA_LONG));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -173,6 +178,18 @@ public final class NativeLib {
 		try {
 			return (int) interopSetShadows.invokeExact(params, draws, drawCount, MemorySegment.ofAddress(worldDepth),
 					MemorySegment.ofAddress(handDepth), MemorySegment.ofAddress(atlasTexture));
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Draws this frame's opaque terrain on Metal; see tl_interop_terrain. Returns a tl error code. */
+	public int interopTerrain(MemorySegment params, MemorySegment draws, int drawCount, long colorTexture, long depthTexture,
+			long atlasTexture, long sharedEvent, long waitValue, long signalValue) {
+		try {
+			return (int) interopTerrain.invokeExact(params, draws, drawCount, MemorySegment.ofAddress(colorTexture),
+					MemorySegment.ofAddress(depthTexture), MemorySegment.ofAddress(atlasTexture), MemorySegment.ofAddress(sharedEvent),
+					waitValue, signalValue);
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}

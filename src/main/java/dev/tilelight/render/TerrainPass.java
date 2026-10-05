@@ -1,0 +1,137 @@
+package dev.tilelight.render;
+
+import dev.tilelight.mixin.LevelRendererAccessor;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.chunk.SectionMesh;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.client.renderer.fog.FogData;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
+
+/**
+ * Gate 3: replaces vanilla's opaque (SOLID + CUTOUT) terrain with a Metal pass that lights it with
+ * sun, sky and block light, using the shadow map for sun visibility.
+ *
+ * <p>Uses vanilla's own visible-section list, so culling matches vanilla exactly. Configured with
+ * {@code tilelight.terrain} = true|false (default true).
+ */
+final class TerrainPass {
+	// tl_terrain_params and tl_draw in tilelight.h
+	private static final long PARAMS_SIZE = 192;
+	private static final long DRAW_SIZE = 56;
+	private static final int DRAW_CUTOUT = 1;
+	private static final float SHADOW_STRENGTH = 0.55f;
+
+	private final boolean enabled = Boolean.parseBoolean(System.getProperty("tilelight.terrain", "true"));
+	private final Arena arena = Arena.ofShared();
+	private final MemorySegment params = this.arena.allocate(PARAMS_SIZE, 16);
+	private MemorySegment draws = this.arena.allocate(DRAW_SIZE * 8192, 16);
+	private int drawCount;
+
+	boolean enabled() {
+		return this.enabled;
+	}
+
+	MemorySegment params() {
+		return this.params;
+	}
+
+	MemorySegment draws() {
+		return this.draws;
+	}
+
+	int drawCount() {
+		return this.drawCount;
+	}
+
+	/** Fills params and the draw list for this frame. shadowSample is null when there are no shadows. */
+	void prepare(MetalExports exports, LevelRenderState level, Matrix4f projection, Matrix4f shadowSample, float sunAngle) {
+		Minecraft mc = Minecraft.getInstance();
+		LevelRendererAccessor lr = (LevelRendererAccessor) mc.levelRenderer;
+		SectionRenderDispatcher dispatcher = lr.tilelight$sectionRenderDispatcher();
+		Vec3 cam = level.cameraRenderState.pos;
+		this.drawCount = dispatcher == null ? 0 : gather(exports, lr.tilelight$visibleSections(), dispatcher, cam);
+
+		Matrix4f viewProj = new Matrix4f(projection).mul(level.cameraRenderState.viewRotationMatrix);
+		float sunX = (float) -Math.sin(sunAngle);
+		float sunY = (float) Math.cos(sunAngle);
+		float day = smoothstep(-0.05f, 0.25f, sunY);
+		FogData fog = level.cameraRenderState.fogData;
+
+		MemorySegment p = this.params;
+		ShadowPass.writeMatrix(p, 0, viewProj);
+		ShadowPass.writeMatrix(p, 64, shadowSample != null ? shadowSample : new Matrix4f());
+		p.set(ValueLayout.JAVA_FLOAT, 128, sunX);
+		p.set(ValueLayout.JAVA_FLOAT, 132, sunY);
+		p.set(ValueLayout.JAVA_FLOAT, 136, 0f);
+		p.set(ValueLayout.JAVA_FLOAT, 140, day);
+		p.set(ValueLayout.JAVA_FLOAT, 144, fog.color.x);
+		p.set(ValueLayout.JAVA_FLOAT, 148, fog.color.y);
+		p.set(ValueLayout.JAVA_FLOAT, 152, fog.color.z);
+		p.set(ValueLayout.JAVA_FLOAT, 156, fog.color.w);
+		p.set(ValueLayout.JAVA_FLOAT, 160, fog.environmentalStart);
+		p.set(ValueLayout.JAVA_FLOAT, 164, fog.environmentalEnd);
+		p.set(ValueLayout.JAVA_FLOAT, 168, fog.renderDistanceStart);
+		p.set(ValueLayout.JAVA_FLOAT, 172, fog.renderDistanceEnd);
+		p.set(ValueLayout.JAVA_FLOAT, 176, level.skyRenderState.rainBrightness);
+		p.set(ValueLayout.JAVA_FLOAT, 180, SHADOW_STRENGTH);
+		p.set(ValueLayout.JAVA_FLOAT, 184, 1f / ShadowPass.MAP_SIZE);
+		p.set(ValueLayout.JAVA_FLOAT, 188, shadowSample != null ? 1f : 0f);
+	}
+
+	private int gather(MetalExports exports, List<SectionRenderDispatcher.RenderSection> sections, SectionRenderDispatcher dispatcher,
+			Vec3 cam) {
+		int count = 0;
+		dispatcher.lock();
+		try {
+			for (SectionRenderDispatcher.RenderSection section : sections) {
+				SectionMesh mesh = section.getSectionMesh();
+				BlockPos origin = section.getRenderOrigin();
+				for (ChunkSectionLayer layer : new ChunkSectionLayer[] {ChunkSectionLayer.SOLID, ChunkSectionLayer.CUTOUT}) {
+					SectionMesh.SectionDraw draw = mesh.getSectionDraw(layer);
+					if (draw == null || draw.indexCount() == 0) continue;
+					SectionRenderDispatcher.RenderSectionBufferSlice slice = dispatcher.getRenderSectionSlice(mesh, layer);
+					if (slice == null) continue;
+					MetalExports.BufferRef vertices = exports.buffer(slice.vertexBuffer());
+					if (vertices == null) continue;
+					long indexBuffer = 0L;
+					long indexOffset = 0L;
+					int indexType = 1;
+					if (draw.hasCustomIndexBuffer()) {
+						if (slice.indexBuffer() == null) continue;
+						MetalExports.BufferRef indices = exports.buffer(slice.indexBuffer());
+						if (indices == null) continue;
+						indexBuffer = indices.mtlBuffer();
+						indexOffset = indices.offset() + slice.indexBufferOffset();
+						indexType = draw.indexType().bytes == 4 ? 1 : 0;
+					}
+					if ((count + 1) * DRAW_SIZE > this.draws.byteSize()) {
+						MemorySegment grown = this.arena.allocate(this.draws.byteSize() * 2, 16);
+						grown.copyFrom(this.draws);
+						this.draws = grown;
+					}
+					ShadowPass.writeDraw(this.draws, count * DRAW_SIZE, vertices.mtlBuffer(), vertices.offset() + slice.vertexBufferOffset(),
+							indexBuffer, indexOffset, draw.indexCount(), indexType,
+							(float) (origin.getX() - cam.x), (float) (origin.getY() - cam.y), (float) (origin.getZ() - cam.z),
+							layer == ChunkSectionLayer.CUTOUT ? DRAW_CUTOUT : 0);
+					count++;
+				}
+			}
+		} finally {
+			dispatcher.unlock();
+		}
+		return count;
+	}
+
+	private static float smoothstep(float edge0, float edge1, float x) {
+		float t = Math.clamp((x - edge0) / (edge1 - edge0), 0f, 1f);
+		return t * t * (3f - 2f * t);
+	}
+}

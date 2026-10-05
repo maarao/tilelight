@@ -16,6 +16,9 @@ public interface LevelRendererAccessor {
 	@Accessor("viewArea")
 	@Nullable ViewArea tilelight$viewArea();
 
+	@Accessor("visibleSections")
+	it.unimi.dsi.fastutil.objects.ObjectArrayList<SectionRenderDispatcher.RenderSection> tilelight$visibleSections();
+
 	@Accessor("sectionRenderDispatcher")
 	@Nullable SectionRenderDispatcher tilelight$sectionRenderDispatcher();
 }

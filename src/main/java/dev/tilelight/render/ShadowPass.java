@@ -29,7 +29,7 @@ import org.joml.Vector3d;
  * {@code tilelight.shadowDebug} = 0 | 1 (reconstructed position) | 2 (shadow factor).
  */
 final class ShadowPass {
-	private static final int MAP_SIZE = 2048;
+	static final int MAP_SIZE = 2048;
 	private static final int RADIUS_SECTIONS = 5; // casters within 80 blocks horizontally
 	private static final float STRENGTH = 0.45f;
 	// The shadow map is redrawn at most this often, or sooner when the sun or camera moves enough.
@@ -57,6 +57,8 @@ final class ShadowPass {
 	private Vec3 mapCamera;
 	private float mapSunAngle;
 	private int framesSinceDraw;
+	// Shadow clip space of the current map, re-aimed at this frame's camera.
+	private final Matrix4f sample = new Matrix4f();
 
 	boolean enabled() {
 		return this.enabled;
@@ -67,11 +69,17 @@ final class ShadowPass {
 		return this.enabled && level.skyRenderState.skybox == DimensionType.Skybox.OVERWORLD;
 	}
 
+	/** The current map's shadow clip space for this frame's camera; valid after submit. */
+	Matrix4f sample() {
+		return this.sample;
+	}
+
 	/**
-	 * Queues shadow work for this frame's interop command buffer. worldDepth is the low-res depth of
-	 * the world; handDepth is the final main depth, non-zero only where the hand was drawn.
+	 * Queues this frame's shadow work. With overlay, the map darkens vanilla's colour at the end of the
+	 * frame: worldDepth is the low-res depth of the world and handDepth is non-zero only where the hand
+	 * was drawn. Without overlay (Gate 3), the terrain pass draws and samples the map; depths may be 0.
 	 */
-	void submit(NativeLib lib, MetalExports exports, LevelRenderState level, long worldDepth, long handDepth) {
+	void submit(NativeLib lib, MetalExports exports, LevelRenderState level, boolean overlay, long worldDepth, long handDepth) {
 		Minecraft mc = Minecraft.getInstance();
 		LevelRendererAccessor lr = (LevelRendererAccessor) mc.levelRenderer;
 		ViewArea viewArea = lr.tilelight$viewArea();
@@ -95,7 +103,7 @@ final class ShadowPass {
 		}
 		// Positions are camera-relative, so a map drawn around an earlier camera position is sampled
 		// after shifting by how far the camera has moved since.
-		Matrix4f sample = new Matrix4f(this.mapViewProj).translate(
+		Matrix4f sample = this.sample.set(this.mapViewProj).translate(
 				(float) (cam.x - this.mapCamera.x), (float) (cam.y - this.mapCamera.y), (float) (cam.z - this.mapCamera.z));
 
 		// Camera: projection (with view bobbing) times view rotation, on camera-relative positions.
@@ -114,6 +122,7 @@ final class ShadowPass {
 		p.set(ValueLayout.JAVA_INT, 272, this.debug);
 		p.set(ValueLayout.JAVA_INT, 276, MAP_SIZE);
 		p.set(ValueLayout.JAVA_INT, 280, redraw ? 1 : 0);
+		p.set(ValueLayout.JAVA_INT, 284, overlay ? 1 : 0);
 
 		long atlas = exports.texture(mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).getTexture());
 		int rc = lib.interopSetShadows(p, this.draws, count, worldDepth, handDepth, atlas);
@@ -158,18 +167,10 @@ final class ShadowPass {
 								indexType = draw.indexType().bytes == 4 ? 1 : 0;
 							}
 							ensureDrawCapacity(count + 1);
-							long base = count * DRAW_SIZE;
-							MemorySegment d = this.draws;
-							d.set(ValueLayout.JAVA_LONG, base, vertices.mtlBuffer());
-							d.set(ValueLayout.JAVA_LONG, base + 8, vertices.offset() + slice.vertexBufferOffset());
-							d.set(ValueLayout.JAVA_LONG, base + 16, indexBuffer);
-							d.set(ValueLayout.JAVA_LONG, base + 24, indexOffset);
-							d.set(ValueLayout.JAVA_INT, base + 32, draw.indexCount());
-							d.set(ValueLayout.JAVA_INT, base + 36, indexType);
-							d.set(ValueLayout.JAVA_FLOAT, base + 40, (float) (origin.getX() - cam.x));
-							d.set(ValueLayout.JAVA_FLOAT, base + 44, (float) (origin.getY() - cam.y));
-							d.set(ValueLayout.JAVA_FLOAT, base + 48, (float) (origin.getZ() - cam.z));
-							d.set(ValueLayout.JAVA_INT, base + 52, layer == ChunkSectionLayer.CUTOUT ? DRAW_CUTOUT : 0);
+							writeDraw(this.draws, count * DRAW_SIZE, vertices.mtlBuffer(), vertices.offset() + slice.vertexBufferOffset(),
+									indexBuffer, indexOffset, draw.indexCount(), indexType,
+									(float) (origin.getX() - cam.x), (float) (origin.getY() - cam.y), (float) (origin.getZ() - cam.z),
+									layer == ChunkSectionLayer.CUTOUT ? DRAW_CUTOUT : 0);
 							count++;
 						}
 					}
@@ -220,7 +221,22 @@ final class ShadowPass {
 		Tilelight.LOG.warn("MoltenVK exported no MTLBuffer for {}; those sections cast no shadows", buffer);
 	}
 
-	private static void writeMatrix(MemorySegment seg, long offset, Matrix4f m) {
+	/** Writes one tl_draw (tilelight.h) at offset. */
+	static void writeDraw(MemorySegment d, long base, long vertexBuffer, long vertexOffset, long indexBuffer, long indexOffset,
+			int indexCount, int indexType, float ox, float oy, float oz, int flags) {
+		d.set(ValueLayout.JAVA_LONG, base, vertexBuffer);
+		d.set(ValueLayout.JAVA_LONG, base + 8, vertexOffset);
+		d.set(ValueLayout.JAVA_LONG, base + 16, indexBuffer);
+		d.set(ValueLayout.JAVA_LONG, base + 24, indexOffset);
+		d.set(ValueLayout.JAVA_INT, base + 32, indexCount);
+		d.set(ValueLayout.JAVA_INT, base + 36, indexType);
+		d.set(ValueLayout.JAVA_FLOAT, base + 40, ox);
+		d.set(ValueLayout.JAVA_FLOAT, base + 44, oy);
+		d.set(ValueLayout.JAVA_FLOAT, base + 48, oz);
+		d.set(ValueLayout.JAVA_INT, base + 52, flags);
+	}
+
+	static void writeMatrix(MemorySegment seg, long offset, Matrix4f m) {
 		float[] f = m.get(new float[16]);
 		for (int i = 0; i < 16; i++) {
 			seg.set(ValueLayout.JAVA_FLOAT, offset + i * 4L, f[i]);

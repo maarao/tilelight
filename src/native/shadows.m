@@ -17,6 +17,7 @@ static uint32_t s_quad_index_capacity;
 
 // Inputs queued by tl_interop_set_shadows for the next frame.
 static BOOL s_pending;
+static BOOL s_map_drawn; // the queued map was already drawn this frame (by the terrain pass)
 static tl_shadow_params s_params;
 static tl_draw *s_draws;
 static int32_t s_draw_count, s_draw_capacity;
@@ -125,7 +126,7 @@ static int32_t ensure_shadow_map(int32_t size) {
 int32_t tl_interop_set_shadows(const tl_shadow_params *params, const tl_draw *draws, int32_t draw_count,
                                void *world_depth, void *hand_depth, void *atlas_tex) {
 	if (!s_device) return TL_ERR_NOT_INITIALIZED;
-	if (draw_count < 0 || !world_depth || !hand_depth || !atlas_tex) return TL_ERR_BUFFER;
+	if (draw_count < 0 || !atlas_tex || (params->overlay && (!world_depth || !hand_depth))) return TL_ERR_BUFFER;
 	if (draw_count > s_draw_capacity) {
 		int32_t capacity = MAX(draw_count, s_draw_capacity * 2);
 		tl_draw *grown = realloc(s_draws, (size_t)capacity * sizeof(tl_draw));
@@ -140,6 +141,7 @@ int32_t tl_interop_set_shadows(const tl_shadow_params *params, const tl_draw *dr
 	s_hand_depth = (__bridge id<MTLTexture>)hand_depth;
 	s_atlas = (__bridge id<MTLTexture>)atlas_tex;
 	s_pending = YES;
+	s_map_drawn = NO;
 	return TL_OK;
 }
 
@@ -232,14 +234,32 @@ static int32_t encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
 	return TL_OK;
 }
 
-int32_t tl_shadows_encode(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
+int32_t tl_shadows_encode_map(id<MTLCommandBuffer> cb) {
+	if (!s_pending || s_map_drawn) return TL_OK;
+	s_map_drawn = YES;
+	if (!s_params.render_map && s_shadow_map) return TL_OK;
+	return encode_shadow_map(cb);
+}
+
+int32_t tl_shadows_encode_apply(id<MTLCommandBuffer> cb, id<MTLTexture> color) {
 	if (!s_pending) return TL_OK;
+	int32_t rc = tl_shadows_encode_map(cb);
+	if (rc == TL_OK && s_params.overlay) rc = encode_apply(cb, color);
 	s_pending = NO;
-	int32_t rc = TL_OK;
-	if (s_params.render_map || !s_shadow_map) rc = encode_shadow_map(cb);
-	if (rc == TL_OK) rc = encode_apply(cb, color);
 	s_depth = s_hand_depth = s_atlas = nil;
 	return rc;
+}
+
+id<MTLTexture> tl_shadows_map(void) {
+	return s_shadow_map;
+}
+
+id<MTLSamplerState> tl_shadows_compare_sampler(void) {
+	return s_compare;
+}
+
+id<MTLBuffer> tl_shadows_quad_indices(uint32_t index_count) {
+	return ensure_quad_indices(index_count) == TL_OK ? s_quad_indices : nil;
 }
 
 void tl_shadows_shutdown(void) {

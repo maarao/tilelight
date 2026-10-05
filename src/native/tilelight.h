@@ -69,7 +69,7 @@ typedef struct {
 	int32_t debug;              // 0 normal, 1 reconstructed position, 2 shadow factor
 	int32_t shadow_map_size;    // texels per side
 	int32_t render_map;         // 0 = reuse the map from an earlier frame (draws are ignored)
-	int32_t pad;
+	int32_t overlay;            // 1 = darken vanilla's colour at the end of the frame (Gate 2 mode)
 } tl_shadow_params;
 
 enum { TL_DRAW_CUTOUT = 1 };
@@ -91,6 +91,24 @@ typedef struct {
 // non-zero only where the first-person hand was drawn, which is left alone. Inputs are copied.
 int32_t tl_interop_set_shadows(const tl_shadow_params *params, const tl_draw *draws, int32_t draw_count,
                                void *world_depth, void *hand_depth, void *atlas_tex);
+
+// --- Gate 3: Minecraft's opaque terrain drawn and lit on Metal, see terrain.m ---
+
+// Matches TerrainParams in shaders/terrain.metal. Column-major matrices on camera-relative positions.
+typedef struct {
+	float view_proj[16];
+	float shadow_sample[16]; // shadow clip space of the current shadow map
+	float sun_dir_day[4];    // xyz towards the sun, w = daylight 0..1
+	float fog_color[4];
+	float fog[4];            // environmental start, end, render-distance start, end
+	float light[4];          // sky brightness, shadow strength, shadow texel size, shadows on (0/1)
+} tl_terrain_params;
+
+// Commits a command buffer on our queue that waits for shared_event >= wait_value, draws the shadow
+// map if one is queued (tl_interop_set_shadows), draws the SOLID and CUTOUT draws into colour/depth
+// (the low-res world targets, mid-frame), and sets shared_event to signal_value.
+int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws, int32_t draw_count, void *color_tex,
+                           void *depth_tex, void *atlas_tex, void *shared_event, uint64_t wait_value, uint64_t signal_value);
 
 // Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
 int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);

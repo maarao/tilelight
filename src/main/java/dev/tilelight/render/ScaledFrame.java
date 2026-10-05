@@ -66,9 +66,13 @@ public final class ScaledFrame {
 	private VulkanDevice vulkanDevice;
 	private MetalExports exports;
 	private final ShadowPass shadows = new ShadowPass();
+	private final TerrainPass terrain = new TerrainPass();
 	private long semaphore;
 	private long sharedEvent;
-	private long frameIndex;
+	// Last value used on the timeline semaphore; every hand-off takes the next two.
+	private long timeline;
+	// Metal drew this frame's opaque terrain, so vanilla must skip its own.
+	private boolean terrainDrawn;
 
 	/** One per window-sized target; the main target is first. Empty until the first frame. */
 	private List<Substitute> substitutes = List.of();
@@ -133,6 +137,7 @@ public final class ScaledFrame {
 		}
 		this.swapped = true;
 		this.worldDepthCopied = false;
+		this.terrainDrawn = false;
 
 		// GameRenderer cleared the native main target; do the same for ours (reverse-Z: depth clears to 0).
 		Substitute m = this.substitutes.getFirst();
@@ -154,7 +159,7 @@ public final class ScaledFrame {
 	}
 
 	private void copyWorldDepth(RenderTarget main) {
-		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied) return;
+		if (!this.swapped || !this.shadows.enabled() || this.worldDepthCopied || this.terrainDrawn) return;
 		this.worldDepthCopied = true;
 		GpuTexture depth = main.getDepthTexture();
 		int w = depth.getWidth(0);
@@ -182,7 +187,7 @@ public final class ScaledFrame {
 			restoreAll();
 		}
 
-		boolean shadowsOn = in != null && this.shadows.appliesTo(level) && this.worldDepthCopied;
+		boolean shadowsOn = in != null && this.shadows.appliesTo(level) && (this.terrainDrawn || this.worldDepthCopied);
 		if (shadowsOn != this.shadowsWereOn) {
 			this.shadowsWereOn = shadowsOn;
 			Tilelight.LOG.info("Sun shadows {} (enabled {}, sky {}, world depth copied {})", shadowsOn ? "on" : "off",
@@ -190,14 +195,15 @@ public final class ScaledFrame {
 		}
 		if (shadowsOn) {
 			// The hand's depth target holds only the hand (it is cleared first); it masks the hand out.
-			Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
-			this.shadows.submit(this.lib, this.exports, level, this.exports.texture(this.worldDepth),
-					this.exports.texture(handTarget.lowDepth));
+			if (!this.terrainDrawn) { // Gate 2 overlay; with Gate 3 terrain the shadows were queued mid-frame
+				Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
+				this.shadows.submit(this.lib, this.exports, level, true, this.exports.texture(this.worldDepth),
+						this.exports.texture(handTarget.lowDepth));
+			}
 		}
 
-		long n = this.frameIndex++;
-		long worldDone = 2 * n + 1;
-		long metalDone = 2 * n + 2;
+		long worldDone = ++this.timeline;
+		long metalDone = ++this.timeline;
 		VulkanCommandEncoder encoder = vulkanEncoder();
 		encoder.signalSemaphore(this.semaphore, worldDone, ALL_COMMANDS);
 		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : this.exports.texture(in), out == null ? 0L : this.exports.texture(out),
@@ -223,6 +229,44 @@ public final class ScaledFrame {
 
 	public void captureProjection(org.joml.Matrix4fc projection) {
 		ShadowPass.levelProjection.set(projection);
+	}
+
+	/** True once Metal has drawn this frame's opaque terrain; vanilla's terrain group is then skipped. */
+	public boolean terrainDrawn() {
+		return this.terrainDrawn;
+	}
+
+	/**
+	 * Called in the world pass just before vanilla opens its main render pass (after the sky). Hands
+	 * the frame to Metal, which draws and lights the opaque terrain into the low-res targets.
+	 */
+	public void terrainHandoff(LevelRenderState level) {
+		if (!this.swapped || this.state != State.ACTIVE || !this.terrain.enabled()) return;
+		Substitute main = this.substitutes.getFirst();
+		boolean shadowsOn = this.shadows.appliesTo(level);
+		if (shadowsOn) {
+			this.shadows.submit(this.lib, this.exports, level, false, 0L, 0L);
+		}
+		this.terrain.prepare(this.exports, level, ShadowPass.levelProjection, shadowsOn ? this.shadows.sample() : null,
+				level.skyRenderState.sunAngle);
+		long atlas = this.exports.texture(net.minecraft.client.Minecraft.getInstance().getTextureManager()
+				.getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getTexture());
+
+		long beforeTerrain = ++this.timeline;
+		long terrainDone = ++this.timeline;
+		VulkanCommandEncoder encoder = vulkanEncoder();
+		encoder.signalSemaphore(this.semaphore, beforeTerrain, ALL_COMMANDS);
+		int rc = this.lib.interopTerrain(this.terrain.params(), this.terrain.draws(), this.terrain.drawCount(),
+				this.exports.texture(main.lowColor), this.exports.texture(main.lowDepth), atlas, this.sharedEvent, beforeTerrain,
+				terrainDone);
+		if (rc != NativeLib.ERR_NOT_COMMITTED) {
+			encoder.waitSemaphore(this.semaphore, terrainDone, ALL_COMMANDS);
+		}
+		if (rc == NativeLib.OK) {
+			this.terrainDrawn = true;
+		} else {
+			Tilelight.LOG.error("Metal terrain failed with code {}; vanilla draws terrain this frame", rc);
+		}
 	}
 
 	/** Releases everything we created on Minecraft's device. Called before GameRenderer closes. */
