@@ -28,8 +28,8 @@ public final class TilelightConfig {
 	public boolean volumetric = true;
 	public boolean water = true;
 	/**
-	 * Run our Metal work on MoltenVK's own command queue, in order with Minecraft's Vulkan work,
-	 * instead of a separate queue. Avoids ~0.3 ms of GPU idle per Vulkan/Metal switch.
+	 * Run our Metal work on MoltenVK's own command queue, in order with Minecraft's Vulkan work, instead
+	 * of a separate queue synchronised with events (each event costs ~0.3 ms of GPU idle).
 	 */
 	public boolean sameQueue = true;
 	/** Haze density per block. */

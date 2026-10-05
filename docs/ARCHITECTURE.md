@@ -530,24 +530,51 @@ vanilla's FPS. What the measurements showed (`tools/bench/gaps.py`,
 
 Fix (config `sameQueue`, default on):
 
-- Our Metal work is committed to MoltenVK's queue.
-- At each hand-off, the Vulkan work recorded so far is submitted early: the
-  current `VulkanQueue.Submission` is closed and a new one begun. This leaves
-  Minecraft's end-of-frame submit and frame pacing untouched.
-- No events are used. Commit order on the single queue plus Metal hazard
-  tracking order the work; every shared resource was checked at runtime to be
-  hazard-tracked (logged once per session).
+- **Shared queue:** our Metal work is committed to MoltenVK's own queue.
+- **Mid-frame flush:** at each hand-off, the Vulkan work recorded so far is
+  submitted early by closing the current `VulkanQueue.Submission`.
+  - Minecraft's per-frame upload command buffer (`VulkanTransientMemory`) is
+    ended and replaced, without rotating its allocators.
+  - Minecraft's end-of-frame submit and frame pacing are untouched.
+- **Vulkan -> Metal: no event.** Our encoders bind every resource directly, and
+  Vulkan writes them through attachments and copies, so Metal hazard tracking
+  orders them. Every shared resource is checked at runtime to be tracked and
+  logged once per session.
+- **Metal -> Vulkan: event only at the end-of-frame hand-off.** MoltenVK 1.4.2
+  reads descriptors through argument buffers made resident with residency
+  sets, which Metal does not hazard-track; the GUI's menu blur samples the
+  upscaled image that way.
+- **After the terrain hand-off, no event is needed:** LevelRenderer opens its
+  main render pass on the same colour and depth as attachments immediately
+  afterwards, and that pass is tracked.
 
-Interleaved, three runs each (`tools/bench/results/2026-10-05-shared-queue.txt`):
+Conditions, checked at startup; otherwise the separate queue with two-way
+events is used:
 
-| Mode                                    | FPS   | GPU busy |
-|-----------------------------------------|-------|----------|
-| Vanilla, native                         | 160   | 98.5%    |
-| Tilelight, separate queue + events      | 126.5 | 80%      |
-| Tilelight, shared queue, no events      | 154   | 98.7%    |
+- MoltenVK's synchronous submits are on. It's checked via the environment; the
+  other override, `VK_EXT_layer_settings`, is not used by Minecraft 26.3, so
+  re-check on updates.
+- Mapped uploads are written in place (unified memory). Staged uploads copy
+  whole blocks once, which a mid-frame split would break.
 
-Tilelight with terrain lighting, shadows, haze, water and MetalFX now runs
-within about 4% of vanilla.
+Interleaved, three runs each; FPS from Metal System Trace. Results:
+`tools/bench/results/2026-10-05-shared-queue.txt` (event-free) and
+`...-safe.txt` (final).
+
+| Mode                                              | FPS   | GPU busy |
+|---------------------------------------------------|-------|----------|
+| Vanilla, native (same session as the final row)   | 168   | 98.6%    |
+| Tilelight, separate queue + two-way events        | 128   | 80%      |
+| Tilelight, shared queue, no events (unsafe)       | 154*  | 98.7%    |
+| Tilelight, shared queue, end-of-frame event only  | 151   | 94.6%    |
+
+\* Measured in an earlier session where vanilla ran at 160.
+
+GPT-6.1 Sol audited the event-free version and found three problems: the
+argument-buffer hazard, a still-recording upload buffer submitted mid-frame,
+and an unchecked synchronous-submit assumption. All three are fixed above. The
+re-audit found the upload split and the dropped terrain event sound, and
+raised the staged-upload and layer-settings conditions now gated.
 
 ## Known issues
 

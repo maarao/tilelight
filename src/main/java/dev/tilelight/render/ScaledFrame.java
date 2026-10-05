@@ -15,12 +15,14 @@ import dev.tilelight.mixin.FrontendCommandEncoderAccessor;
 import dev.tilelight.mixin.FrontendGpuDeviceAccessor;
 import dev.tilelight.mixin.RenderTargetAccessor;
 import dev.tilelight.mixin.VulkanCommandEncoderAccessor;
+import dev.tilelight.mixin.VulkanTransientMemoryAccessor;
 import dev.tilelight.nativeapi.NativeLib;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.joml.Vector4fc;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.EXTMetalObjects;
 import org.lwjgl.vulkan.VK10;
 import org.lwjgl.vulkan.VK12;
@@ -51,7 +53,6 @@ import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
 public final class ScaledFrame {
 	private static final long ALL_COMMANDS = 0x10000L; // VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 	private static final int STATS_EVERY_FRAMES = 600;
-	private static final boolean QUEUE_EVENTS = Boolean.getBoolean("tilelight.queueEvents");
 	// Same usage as RenderTarget.createBuffers: copy src/dst, sampled, render attachment.
 	private static final int TARGET_USAGE = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC
 			| GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT;
@@ -238,7 +239,8 @@ public final class ScaledFrame {
 		}
 
 		VulkanCommandEncoder encoder = vulkanEncoder();
-		long[] values = beginHandoff(encoder);
+		// The GUI can sample the native colour (menu background blur) before drawing into it.
+		long[] values = beginHandoff(encoder, false);
 		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : this.exports.texture(in), out == null ? 0L : this.exports.texture(out),
 				this.sharedEvent, values[0], values[1]);
 		endHandoff(encoder, rc, values[1]);
@@ -261,8 +263,8 @@ public final class ScaledFrame {
 				this.trackingLogged = true;
 				String report = this.lib.interopTrackingReport();
 				Tilelight.LOG.info("Metal hazard tracking of shared resources: {}", report);
-				if (report.contains("UNTRACKED") && !QUEUE_EVENTS) {
-					Tilelight.LOG.warn("Some shared resources are untracked; ordering by queue alone may race");
+				if (report.contains("UNTRACKED")) {
+					Tilelight.LOG.warn("Some shared resources are untracked; Vulkan -> Metal ordering may race");
 				}
 			}
 			Tilelight.LOG.info("cpu us/frame: frame period {}, shadows {}, terrain gather {}, terrain native {}, end of frame {}",
@@ -321,7 +323,9 @@ public final class ScaledFrame {
 				.getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getTexture());
 
 		VulkanCommandEncoder encoder = vulkanEncoder();
-		long[] values = beginHandoff(encoder);
+		// Called at prepareTranslucents RETURN: LevelRenderer opens its "Main"/"Solid" render pass on
+		// the main colour and depth right after, before anything samples them.
+		long[] values = beginHandoff(encoder, true);
 		int rc = this.lib.interopTerrain(this.terrain.params(), this.terrain.draws(), this.terrain.drawCount(),
 				this.exports.texture(main.lowColor), this.exports.texture(main.lowDepth), atlas, this.sharedEvent, values[0],
 				values[1]);
@@ -503,7 +507,18 @@ public final class ScaledFrame {
 				return false;
 			}
 		}
-		if (TilelightConfig.get().sameQueue) {
+		// The shared queue relies on MoltenVK committing inside vkQueueSubmit (its default). The only other
+		// way to turn that off, VK_EXT_layer_settings at instance creation, is not used by Minecraft 26.3.
+		String sync = System.getenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS");
+		boolean syncSubmits = sync == null || !(sync.equals("0") || sync.equalsIgnoreCase("false"));
+		// A mid-frame flush can only split uploads that are written in place (unified memory); staged
+		// uploads copy whole blocks once, so later writes to a block would miss their copy.
+		boolean uploadsInPlace = ((VulkanTransientMemoryAccessor) vulkanEncoder().transientMemory()).tilelight$uploadsInPlace();
+		if (TilelightConfig.get().sameQueue && !(syncSubmits && uploadsInPlace)) {
+			Tilelight.LOG.warn("Using a separate Metal queue (synchronous submits {}, in-place uploads {})", syncSubmits,
+					uploadsInPlace);
+		}
+		if (TilelightConfig.get().sameQueue && syncSubmits && uploadsInPlace) {
 			long queue = this.exports.commandQueue();
 			if (queue != 0L && this.lib.interopUseQueue(queue) == NativeLib.OK) {
 				this.sameQueue = true;
@@ -521,24 +536,57 @@ public final class ScaledFrame {
 	 * Gets Vulkan's work so far ordered before the Metal command buffer about to be committed, and
 	 * returns the {wait, signal} event values for it (0 = none).
 	 *
-	 * <p>Separate queue: Vulkan signals a timeline value that Metal waits for on the GPU. Shared queue:
-	 * the Vulkan work recorded so far is submitted now, so MoltenVK commits it to the queue first; queue
-	 * order and Metal's hazard tracking then order the work, and events (which cost ~0.3 ms of GPU idle
-	 * each) are skipped unless {@code -Dtilelight.queueEvents=true}. Minecraft's frame pacing is left
-	 * alone: its end-of-frame submit still signals and waits as before.
+	 * <p>Separate queue: Vulkan signals a timeline value that Metal waits for, and Metal signals one
+	 * that Vulkan waits for, both on the GPU.
+	 *
+	 * <p>Shared queue: the Vulkan work recorded so far is submitted now, so MoltenVK commits it to the
+	 * queue before our command buffer. Vulkan -> Metal then needs no event: our encoders bind every
+	 * resource directly, so Metal's hazard tracking orders our reads after Vulkan's attachment and copy
+	 * writes. Metal -> Vulkan keeps an event: MoltenVK reads through argument buffers made resident with
+	 * residency sets, which Metal does not track, unless the next Vulkan work is a render pass with our
+	 * outputs as attachments. Minecraft's end-of-frame submit and pacing are untouched.
 	 */
-	private long[] beginHandoff(VulkanCommandEncoder encoder) {
-		boolean events = !this.sameQueue || QUEUE_EVENTS;
-		long wait = events ? ++this.timeline : 0L;
-		long signal = events ? ++this.timeline : 0L;
-		if (events) encoder.signalSemaphore(this.semaphore, wait, ALL_COMMANDS);
-		if (this.sameQueue) {
-			VulkanCommandEncoderAccessor acc = (VulkanCommandEncoderAccessor) encoder;
-			acc.tilelight$endCommandBuffer();
-			acc.tilelight$submissionBuilder().close();
-			acc.tilelight$setSubmissionBuilder(acc.tilelight$device().graphicsQueue().beginSubmit());
+	private long[] beginHandoff(VulkanCommandEncoder encoder, boolean attachmentPassNext) {
+		long signal = ++this.timeline;
+		if (!this.sameQueue) {
+			long wait = signal;
+			signal = ++this.timeline;
+			encoder.signalSemaphore(this.semaphore, wait, ALL_COMMANDS);
+			return new long[] {wait, signal};
 		}
-		return new long[] {wait, signal};
+		flush(encoder);
+		// If Vulkan's next use of our outputs is as render pass attachments (tracked), Metal orders that
+		// pass after our writes and everything else follows it in MoltenVK's own order: no event.
+		return new long[] {0L, attachmentPassNext ? 0L : signal};
+	}
+
+	/**
+	 * Submits everything recorded so far without disturbing Minecraft's per-frame bookkeeping. The
+	 * frame's upload command buffer was put in the submission when it began and is still recording,
+	 * so it is ended here and a fresh one continues the frame in the next submission; its allocators
+	 * are not rotated (that happens at the real end of frame).
+	 */
+	private static void flush(VulkanCommandEncoder encoder) {
+		VulkanCommandEncoderAccessor acc = (VulkanCommandEncoderAccessor) encoder;
+		VulkanTransientMemoryAccessor uploads = (VulkanTransientMemoryAccessor) encoder.transientMemory();
+		acc.tilelight$endCommandBuffer();
+		VkCommandBuffer uploadBuffer = uploads.tilelight$commandBuffer();
+		if (uploadBuffer != null) {
+			if (uploads.tilelight$anyCommandRecorded()) {
+				try (MemoryStack stack = MemoryStack.stackPush()) {
+					VulkanCommandEncoder.memoryBarrier(uploadBuffer, stack);
+				}
+			}
+			VK10.vkEndCommandBuffer(uploadBuffer);
+		}
+		acc.tilelight$submissionBuilder().close();
+		acc.tilelight$setSubmissionBuilder(acc.tilelight$device().graphicsQueue().beginSubmit());
+		if (uploadBuffer != null) {
+			VkCommandBuffer next = encoder.allocateAndBeginTransientCommandBuffer();
+			encoder.execute(next);
+			uploads.tilelight$setCommandBuffer(next);
+			uploads.tilelight$setAnyCommandRecorded(false);
+		}
 	}
 
 	private void endHandoff(VulkanCommandEncoder encoder, int rc, long signal) {

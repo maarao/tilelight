@@ -12,6 +12,7 @@
 		"VulkanCommandEncoderAccessor",
 		"VulkanCommandEncoderMixin",
 		"VulkanFeatureSetsMixin",
+		"VulkanTransientMemoryAccessor",
 		"VulkanGpuBufferDirectAccessor"
 	],
 	"injectors": {
