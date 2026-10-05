@@ -203,6 +203,10 @@ public final class ScaledFrame {
 				this.shadows.submit(this.lib, this.exports, level, true, this.exports.texture(this.worldDepth),
 						this.exports.texture(handTarget.lowDepth));
 			}
+			if (this.volumetric.enabled() && this.worldDepthCopied) {
+				this.volumetric.submit(this.lib, level, ShadowPass.levelProjection, this.shadows.sample(),
+						this.exports.texture(this.worldDepth));
+			}
 		}
 
 		long worldDone = ++this.timeline;

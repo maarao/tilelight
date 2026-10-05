@@ -44,7 +44,8 @@ kernel void tl_volumetric_march(texture2d<half, access::write> out [[texture(0)]
 	float3 end = far4.xyz / far4.w;
 	float dist = length(end);
 	float3 dir = end / max(dist, 1e-4);
-	dist = min(dist, p.medium.w);
+	// The sky already carries vanilla's own horizon fog; only a short stretch of haze goes in front of it.
+	dist = min(dist, d > 0.0 ? p.medium.w : p.medium.w * 0.35);
 
 	int steps = int(p.misc.w);
 	float step_len = dist / float(steps);
