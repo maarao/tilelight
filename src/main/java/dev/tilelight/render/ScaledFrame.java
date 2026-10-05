@@ -82,6 +82,7 @@ public final class ScaledFrame {
 	private boolean handInHudDepth;
 	// Set once the world depth was copied this frame (always-on-top features may clear it before the hand).
 	private boolean worldDepthCopied;
+	private boolean shadowsWereOn;
 
 	private ScaledFrame() {
 		String m = System.getProperty("tilelight.mode", "metalfx");
@@ -181,7 +182,13 @@ public final class ScaledFrame {
 			restoreAll();
 		}
 
-		if (in != null && this.shadows.appliesTo(level) && this.worldDepthCopied) {
+		boolean shadowsOn = in != null && this.shadows.appliesTo(level) && this.worldDepthCopied;
+		if (shadowsOn != this.shadowsWereOn) {
+			this.shadowsWereOn = shadowsOn;
+			Tilelight.LOG.info("Sun shadows {} (enabled {}, sky {}, world depth copied {})", shadowsOn ? "on" : "off",
+					this.shadows.enabled(), level.skyRenderState.skybox, this.worldDepthCopied);
+		}
+		if (shadowsOn) {
 			// The hand's depth target holds only the hand (it is cleared first); it masks the hand out.
 			Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
 			this.shadows.submit(this.lib, this.exports, level, this.exports.texture(this.worldDepth),
