@@ -10,6 +10,7 @@
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #include <stdatomic.h>
+#include "shadows.h"
 #include "tilelight.h"
 
 static id<MTLDevice> g_device;
@@ -49,6 +50,8 @@ int32_t tl_interop_init(void *mtl_device, const char *metallib_path) {
 		queue.label = @"tilelight interop";
 		g_queue = queue;
 		g_library = library;
+		int32_t rc = tl_shadows_init(device, library);
+		if (rc != TL_OK) return rc;
 		MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
 		sd.minFilter = MTLSamplerMinMagFilterLinear;
 		sd.magFilter = MTLSamplerMinMagFilterLinear;
@@ -131,8 +134,9 @@ int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared
 		cb.label = @"tilelight frame";
 		[cb encodeWaitForEvent:event value:wait_value];
 
-		int32_t rc = TL_OK;
-		switch (mode) {
+		// Shadows darken the low-res colour before it is upscaled.
+		int32_t rc = in ? tl_shadows_encode(cb, in) : TL_OK;
+		if (rc == TL_OK) switch (mode) {
 		case TL_MODE_NOOP:
 			break;
 		case TL_MODE_BILINEAR: {
@@ -191,6 +195,7 @@ int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *e
 }
 
 void tl_interop_shutdown(void) {
+	tl_shadows_shutdown();
 	if (g_queue) {
 		// Command buffers retain what they use, but let in-flight work finish before the
 		// caller destroys the Vulkan objects behind those Metal textures and the event.

@@ -9,27 +9,21 @@ import com.mojang.renderpearl.api.textures.GpuTexture;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.mojang.renderpearl.backend.vulkan.VulkanCommandEncoder;
 import com.mojang.renderpearl.backend.vulkan.VulkanDevice;
-import com.mojang.renderpearl.backend.vulkan.VulkanGpuTexture;
 import dev.tilelight.Tilelight;
 import dev.tilelight.mixin.FrontendCommandEncoderAccessor;
 import dev.tilelight.mixin.FrontendGpuDeviceAccessor;
 import dev.tilelight.mixin.RenderTargetAccessor;
 import dev.tilelight.nativeapi.NativeLib;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.joml.Vector4fc;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.EXTMetalObjects;
 import org.lwjgl.vulkan.VK10;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkDevice;
-import org.lwjgl.vulkan.VkExportMetalDeviceInfoEXT;
 import org.lwjgl.vulkan.VkExportMetalObjectCreateInfoEXT;
-import org.lwjgl.vulkan.VkExportMetalObjectsInfoEXT;
-import org.lwjgl.vulkan.VkExportMetalSharedEventInfoEXT;
-import org.lwjgl.vulkan.VkExportMetalTextureInfoEXT;
 import org.lwjgl.vulkan.VkSemaphoreCreateInfo;
 import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
 
@@ -55,7 +49,6 @@ import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
  */
 public final class ScaledFrame {
 	private static final long ALL_COMMANDS = 0x10000L; // VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
-	private static final int PLANE_0 = 0x10; // VK_IMAGE_ASPECT_PLANE_0_BIT
 	private static final int STATS_EVERY_FRAMES = 600;
 	// Same usage as RenderTarget.createBuffers: copy src/dst, sampled, render attachment.
 	private static final int TARGET_USAGE = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC
@@ -71,16 +64,22 @@ public final class ScaledFrame {
 
 	private NativeLib lib;
 	private VulkanDevice vulkanDevice;
+	private MetalExports exports;
+	private final ShadowPass shadows = new ShadowPass();
 	private long semaphore;
 	private long sharedEvent;
 	private long frameIndex;
-	private final Map<GpuTexture, Long> mtlTextures = new IdentityHashMap<>();
 
 	/** One per window-sized target; the main target is first. Empty until the first frame. */
 	private List<Substitute> substitutes = List.of();
 	private boolean swapped;
 
 	private long statFrames;
+
+	// Copy of the world depth taken before vanilla clears the main depth to draw the hand.
+	private GpuTexture worldDepth;
+	// Whether the hand was drawn into the 3D HUD target's depth instead of the main depth.
+	private boolean handInHudDepth;
 
 	private ScaledFrame() {
 		String m = System.getProperty("tilelight.mode", "metalfx");
@@ -136,7 +135,26 @@ public final class ScaledFrame {
 		RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(m.lowColor, clearColor, m.lowDepth, 0.0);
 	}
 
-	public void afterLevel() {
+	/**
+	 * Called in renderLevel just before the 3D HUD (hand) pass, which clears the main depth when no
+	 * post effect is active. Keeps the world depth for the Metal passes.
+	 */
+	public void beforeHud(RenderTarget main, boolean handInHudDepth) {
+		if (!this.swapped || !this.shadows.enabled()) return;
+		this.handInHudDepth = handInHudDepth;
+		GpuTexture depth = main.getDepthTexture();
+		int w = depth.getWidth(0);
+		int h = depth.getHeight(0);
+		if (this.worldDepth == null || this.worldDepth.getWidth(0) != w || this.worldDepth.getHeight(0) != h
+				|| this.worldDepth.getFormat() != depth.getFormat()) {
+			if (this.worldDepth != null) this.worldDepth.close();
+			this.worldDepth = RenderSystem.getDevice().createTexture(() -> "Tilelight / World Depth",
+					GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, depth.getFormat(), w, h, 1, 1);
+		}
+		RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(depth, this.worldDepth, 0, 0, 0, 0, 0, w, h);
+	}
+
+	public void afterLevel(LevelRenderState level) {
 		if (this.state != State.ACTIVE) return;
 		GpuTexture in;
 		GpuTexture out;
@@ -150,12 +168,19 @@ public final class ScaledFrame {
 			restoreAll();
 		}
 
+		if (in != null && this.shadows.enabled() && this.worldDepth != null) {
+			// The hand's depth target holds only the hand (it is cleared first); it masks the hand out.
+			Substitute handTarget = this.substitutes.get(this.handInHudDepth ? 1 : 0);
+			this.shadows.submit(this.lib, this.exports, level, this.exports.texture(this.worldDepth),
+					this.exports.texture(handTarget.lowDepth));
+		}
+
 		long n = this.frameIndex++;
 		long worldDone = 2 * n + 1;
 		long metalDone = 2 * n + 2;
 		VulkanCommandEncoder encoder = vulkanEncoder();
 		encoder.signalSemaphore(this.semaphore, worldDone, ALL_COMMANDS);
-		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : mtlTexture(in), out == null ? 0L : mtlTexture(out),
+		int rc = this.lib.interopFrame(this.mode, in == null ? 0L : this.exports.texture(in), out == null ? 0L : this.exports.texture(out),
 				this.sharedEvent, worldDone, metalDone);
 		if (rc != NativeLib.ERR_NOT_COMMITTED) {
 			// A committed Metal command buffer signals metalDone even if encoding failed.
@@ -176,6 +201,10 @@ public final class ScaledFrame {
 		}
 	}
 
+	public void captureProjection(org.joml.Matrix4fc projection) {
+		ShadowPass.levelProjection.set(projection);
+	}
+
 	/** Releases everything we created on Minecraft's device. Called before GameRenderer closes. */
 	public void shutdown() {
 		restoreIfSwapped();
@@ -190,7 +219,11 @@ public final class ScaledFrame {
 			s.closeLow();
 		}
 		this.substitutes = List.of();
-		this.mtlTextures.clear();
+		if (this.worldDepth != null) {
+			this.worldDepth.close();
+			this.worldDepth = null;
+		}
+		if (this.exports != null) this.exports.clear();
 		if (this.semaphore != 0L) {
 			VK10.vkDestroySemaphore(this.vulkanDevice.vkDevice(), this.semaphore, null);
 			this.semaphore = 0L;
@@ -272,7 +305,6 @@ public final class ScaledFrame {
 
 		void closeLow() {
 			if (this.lowColor != null) {
-				ScaledFrame.this.mtlTextures.remove(this.lowColor);
 				this.lowColorView.close();
 				this.lowColor.close();
 			}
@@ -306,10 +338,9 @@ public final class ScaledFrame {
 			return false;
 		}
 		this.vulkanDevice = vk;
+		this.exports = new MetalExports(vk);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			VkExportMetalDeviceInfoEXT deviceInfo = VkExportMetalDeviceInfoEXT.calloc(stack).sType$Default();
-			export(device, stack, deviceInfo.address());
-			int rc = this.lib.interopInit(deviceInfo.mtlDevice());
+			int rc = this.lib.interopInit(this.exports.device());
 			if (rc != NativeLib.OK) {
 				Tilelight.LOG.error("Metal interop init failed with code {}", rc);
 				return false;
@@ -331,10 +362,7 @@ public final class ScaledFrame {
 			}
 			this.semaphore = handle[0];
 
-			VkExportMetalSharedEventInfoEXT eventInfo = VkExportMetalSharedEventInfoEXT.calloc(stack).sType$Default()
-					.semaphore(this.semaphore);
-			export(device, stack, eventInfo.address());
-			this.sharedEvent = eventInfo.mtlSharedEvent();
+			this.sharedEvent = this.exports.sharedEvent(this.semaphore);
 			if (this.sharedEvent == 0L) {
 				Tilelight.LOG.error("MoltenVK did not export an MTLSharedEvent for the timeline semaphore");
 				VK10.vkDestroySemaphore(device, this.semaphore, null);
@@ -346,29 +374,6 @@ public final class ScaledFrame {
 		Tilelight.LOG.info("Metal interop active: mode {}, render scale {}", this.mode, this.scale);
 		this.state = State.ACTIVE;
 		return true;
-	}
-
-	private long mtlTexture(GpuTexture texture) {
-		Long cached = this.mtlTextures.get(texture);
-		if (cached != null) return cached;
-		// Targets are recreated on resize; drop pointers to closed textures so the map stays small.
-		this.mtlTextures.keySet().removeIf(GpuTexture::isClosed);
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			VkExportMetalTextureInfoEXT info = VkExportMetalTextureInfoEXT.calloc(stack).sType$Default()
-					.image(((VulkanGpuTexture) texture).vkImage()).plane(PLANE_0);
-			export(this.vulkanDevice.vkDevice(), stack, info.address());
-			if (info.mtlTexture() == 0L) {
-				throw new IllegalStateException("MoltenVK did not export an MTLTexture for " + texture.getLabel());
-			}
-			this.mtlTextures.put(texture, info.mtlTexture());
-			return info.mtlTexture();
-		}
-	}
-
-	private static void export(VkDevice device, MemoryStack stack, long chain) {
-		VkExportMetalObjectsInfoEXT objects = VkExportMetalObjectsInfoEXT.calloc(stack).sType$Default();
-		objects.pNext(chain);
-		EXTMetalObjects.vkExportMetalObjectsEXT(device, objects);
 	}
 
 	private static VulkanCommandEncoder vulkanEncoder() {

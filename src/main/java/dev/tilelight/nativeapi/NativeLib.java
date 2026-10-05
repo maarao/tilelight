@@ -44,6 +44,7 @@ public final class NativeLib {
 	private final MethodHandle shutdown;
 	private final MethodHandle interopInit;
 	private final MethodHandle interopFrame;
+	private final MethodHandle interopSetShadows;
 	private final MethodHandle interopTakeStats;
 	private final MethodHandle interopShutdown;
 	private final Path metallib;
@@ -63,6 +64,9 @@ public final class NativeLib {
 		this.interopFrame = bind(linker, lookup, "tl_interop_frame",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
 						ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+		this.interopSetShadows = bind(linker, lookup, "tl_interop_set_shadows",
+				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+						ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopTakeStats = bind(linker, lookup, "tl_interop_take_stats",
 				FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 		this.interopShutdown = bind(linker, lookup, "tl_interop_shutdown", FunctionDescriptor.ofVoid());
@@ -158,6 +162,17 @@ public final class NativeLib {
 		try {
 			return (int) interopFrame.invokeExact(mode, MemorySegment.ofAddress(inTexture), MemorySegment.ofAddress(outTexture),
 					MemorySegment.ofAddress(sharedEvent), waitValue, signalValue);
+		} catch (Throwable t) {
+			throw rethrow(t);
+		}
+	}
+
+	/** Queues shadow work for the next interopFrame; see tl_interop_set_shadows. */
+	public int interopSetShadows(MemorySegment params, MemorySegment draws, int drawCount, long worldDepth, long handDepth,
+			long atlasTexture) {
+		try {
+			return (int) interopSetShadows.invokeExact(params, draws, drawCount, MemorySegment.ofAddress(worldDepth),
+					MemorySegment.ofAddress(handDepth), MemorySegment.ofAddress(atlasTexture));
 		} catch (Throwable t) {
 			throw rethrow(t);
 		}
