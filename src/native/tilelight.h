@@ -37,3 +37,25 @@ int32_t tl_selftest(int32_t n, int64_t *gpu_ns);
 
 // Releases everything created by tl_init.
 void tl_shutdown(void);
+
+// --- Interop with Minecraft's Vulkan (MoltenVK) device, see interop.m ---
+
+// What tl_interop_frame does between the event wait and signal.
+enum {
+	TL_MODE_NOOP = 0,     // nothing: measures the cost of the hand-off itself
+	TL_MODE_BILINEAR = 1, // plain bilinear upscale in a fragment shader
+	TL_MODE_METALFX = 2,  // MetalFX spatial upscale
+};
+
+// Adopts Minecraft's MTLDevice and MTLCommandQueue (exported via VK_EXT_metal_objects).
+int32_t tl_interop_init(void *mtl_device, void *mtl_queue, const char *metallib_path);
+
+// Encodes one frame on Minecraft's queue: wait for shared_event >= wait_value, run mode
+// reading in_tex and writing out_tex, then set shared_event to signal_value. Never blocks the CPU.
+int32_t tl_interop_frame(int32_t mode, void *in_tex, void *out_tex, void *shared_event, uint64_t wait_value,
+                         uint64_t signal_value);
+
+// Returns and resets the GPU time and count of completed interop frames, and failed command buffers.
+int32_t tl_interop_take_stats(int64_t *gpu_ns_total, int64_t *frames, int32_t *errors);
+
+void tl_interop_shutdown(void);

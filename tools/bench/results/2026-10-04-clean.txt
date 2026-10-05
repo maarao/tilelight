@@ -1,0 +1,49 @@
+== vk-native
+window 5.37 s
+java (45926)                             busy   5301.3 ms ( 98.6% of window) | 6.66 ms/frame over 796 frames (148.1 fps)
+    Compute      busy     16.6 ms = 0.02 ms/frame
+    Fragment     busy   3490.8 ms = 4.39 ms/frame
+    Vertex       busy   1888.0 ms = 2.37 ms/frame
+WindowServer (598)                       busy    482.0 ms (  9.0% of window) | 6.26 ms/frame over 77 frames (14.3 fps)
+== gl-native
+window 5.37 s
+java (47299)                             busy   4227.0 ms ( 78.7% of window) | 2.49 ms/frame over 1695 frames (315.4 fps)
+    Compute      busy     40.6 ms = 0.02 ms/frame
+    Fragment     busy   3087.1 ms = 1.82 ms/frame
+    Vertex       busy   1249.3 ms = 0.74 ms/frame
+WindowServer (598)                       busy    784.4 ms ( 14.6% of window) | 1.44 ms/frame over 545 frames (101.4 fps)
+== vk-quarterpx
+window 5.36 s
+java (48231)                             busy   4957.5 ms ( 92.5% of window) | 3.26 ms/frame over 1522 frames (283.9 fps)
+    Compute      busy     32.9 ms = 0.02 ms/frame
+    Fragment     busy   2075.7 ms = 1.36 ms/frame
+    Vertex       busy   2915.7 ms = 1.92 ms/frame
+WindowServer (598)                       busy    431.7 ms (  8.1% of window) | 5.68 ms/frame over 76 frames (14.2 fps)
+== gl121
+window 5.37 s
+java (49858)                             busy   5234.7 ms ( 97.5% of window) | 0.50 ms/frame over 10474 frames (1951.1 fps)
+    Compute      busy     22.8 ms = 0.00 ms/frame
+    Fragment     busy   4708.1 ms = 0.45 ms/frame
+    Vertex       busy   2666.9 ms = 0.25 ms/frame
+WindowServer (598)                       busy    844.8 ms ( 15.7% of window) | 1.58 ms/frame over 535 frames (99.7 fps)
+== metalcraft121
+window 5.36 s
+java (52243)                             busy   5078.7 ms ( 94.8% of window) | 8.23 ms/frame over 617 frames (115.1 fps)
+    Fragment     busy   4416.3 ms = 7.16 ms/frame
+    Vertex       busy   2367.2 ms = 3.84 ms/frame
+WindowServer (598)                       busy    469.4 ms (  8.8% of window) | 6.26 ms/frame over 75 frames (14.0 fps)
+    Fragment     busy    467.4 ms = 6.23 ms/frame
+== rockstar-0.75
+window 5.36 s
+java (53555)                             busy   5231.4 ms ( 97.6% of window) | 69.75 ms/frame over 75 frames (14.0 fps)
+    Compute      busy   1116.7 ms = 14.89 ms/frame
+    Fragment     busy   4105.3 ms = 54.74 ms/frame
+    Vertex       busy    745.5 ms = 9.94 ms/frame
+WindowServer (598)                       busy    644.1 ms ( 12.0% of window) | 8.37 ms/frame over 77 frames (14.4 fps)
+== rockstar-1.0
+window 5.37 s
+java (55201)                             busy   5268.0 ms ( 98.1% of window) | 114.52 ms/frame over 46 frames (8.6 fps)
+    Compute      busy   1191.1 ms = 25.89 ms/frame
+    Fragment     busy   4274.0 ms = 92.91 ms/frame
+    Vertex       busy    527.7 ms = 11.47 ms/frame
+WindowServer (598)                       busy    640.8 ms ( 11.9% of window) | 8.11 ms/frame over 79 frames (14.7 fps)

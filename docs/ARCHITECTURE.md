@@ -1,6 +1,6 @@
 # Metal renderer for Minecraft Java: architecture sketch
 
-Status: draft, 2026-10-04. Nothing is built yet.
+Status: draft, 2026-10-04. Scaffold built; Gate 1 in progress.
 
 ## Goal
 
@@ -12,82 +12,67 @@ Reference machine: MacBook Pro, M5, 10-core GPU, 32 GB memory.
 Target: 60 fps (16.6 ms per frame) at native Retina output (3456x2168), 16-chunk
 render distance, with fog, shadows, water reflections, sky and clouds.
 
-## What we measured (2026-10-04, M5, Minecraft 26.3)
+## Measurements (2026-10-04, M5, Minecraft 26.3)
 
-Same camera in every run: 100 blocks up, over a forest and a lake.
-Output resolution 3456x2168. Raw numbers are in `/tmp/mcbench/results.txt`.
+> **Correction.** The first round of numbers on 2026-10-04 (vanilla Vulkan at
+> 17.1-19.7 ms) was taken while Unreal Editor and Blender were open. Their load
+> showed up as WindowServer at 64-79% GPU busy instead of the clean ~9%, and it
+> inflated our frame times by about 2.5x. Everything below is from a clean
+> re-run. `tools/bench/bench.sh` now prints a warning when another process
+> takes more than 5% of the GPU, or WindowServer more than 30%.
+> The contaminated conclusions ("about 11 ms of fixed cost", "triangle volume
+> is the bottleneck", "native Metal for vanilla isn't faster than MoltenVK")
+> are withdrawn.
 
-| Setup                                  | FPS | GPU ms/frame |
-|----------------------------------------|-----|--------------|
-| Vanilla, Vulkan through MoltenVK       | 47  | 19.7         |
-| Rockstar Shaders 1.0, 50% render scale | 14  | 71.5         |
-| Rockstar Shaders 1.0, 75% render scale | 10  | ~105         |
-| Rockstar Shaders 1.0, 100% scale       | 7   | 149.3        |
+Method:
 
-What this tells us about frame cost:
+- Same seed, same camera: 100 blocks up, over a forest and a lake.
+- Native 3456x2168, render distance 16 unless noted, windowed.
+- GPU time comes from 5-second Instruments Metal System Traces, split per
+  process and per GPU channel by `tools/bench/gpuparse.py`.
+- Raw output is in `tools/bench/results/2026-10-04-clean*.txt`.
 
-- **Terrain geometry is a fixed cost.** Rockstar's G-buffer pass took 17-28 ms
-  and barely changed with resolution. Vanilla's whole frame is about 20 ms.
-- **Ray-marched clouds scale with pixel count:** 7.8 ms at 50% scale, 32.8 ms
-  at 100%.
-- **The Vulkan-to-Metal hand-off costs 5-11 ms per frame.** That is the
-  `rt_trace_wait` pass, where the Vulkan side waits for the Metal ray-tracing
-  step.
-- **Intermediate images use 1-1.6 GB.** That is a lot of memory traffic on a
-  chip with about 153 GB/s of bandwidth.
+| Setup                                     | FPS   | GPU ms/frame | Vertex | Fragment |
+|-------------------------------------------|-------|--------------|--------|----------|
+| 26.3 vanilla, Vulkan (MoltenVK)           | 148   | **6.66**     | 2.37   | 4.39     |
+| 26.3 vanilla, Vulkan, 1/4 of the pixels   | 284   | 3.26         | 1.92   | 1.36     |
+| 26.3 vanilla, Vulkan, render distance 6   | 151   | 6.44         | 2.15   | 4.39     |
+| 26.3 vanilla, Vulkan, render distance 24  | 148   | 6.66         | 2.38   | 4.38     |
+| 26.3 vanilla, Vulkan, fullscreen          | 155   | 6.37         | 2.23   | 4.22     |
+| 1.21.11 + MetalCraft 0.1.0 (native Metal) | 115   | 8.23         | 3.84   | 7.16     |
+| Rockstar Shaders 1.0, 75% render scale    | 14    | 69.8         | 9.9    | 54.7     |
+| Rockstar Shaders 1.0, 100% render scale   | 8.6   | 114.5        | 11.5   | 92.9     |
+
+Vertex and fragment work overlap, so those columns don't sum to the total.
+
+OpenGL runs are left out on purpose. Apple's OpenGL layer splits each frame
+into many Metal command buffers, so per-frame GPU time can't be attributed from
+the trace (it reported nonsense like 1951 fps). Use the in-game F3 counter for
+OpenGL if it's ever needed.
+
+What this tells us:
+
+- **Vanilla is cheap: 6.7 ms at native Retina,** so there are about 10 ms of
+  headroom for effects at 60 fps.
+- **Most of vanilla's cost scales with pixels:** about 1.8 ms fixed and about
+  4.9 ms per-pixel at native resolution.
+- **Render distance 6 to 24 changes almost nothing.** Triangle count is not the
+  bottleneck at this camera. Terrain triangle reduction drops in priority.
+- **Render scale is the main lever.** At 67% scale vanilla should cost about
+  4 ms, which leaves about 11 ms for effects plus upscaling.
+- **Fullscreen vs windowed is within noise** (about 0.3 ms).
+- **Rockstar is about 10x vanilla's cost even on a clean machine.** At 75% scale
+  it is already 70 ms, so its effects (ray-marched clouds, ray traced lighting
+  through a cross-API wait) are what we must not copy.
+- **MetalCraft's native Metal backend is not faster than MoltenVK** (8.2 ms on
+  1.21.11 vs 6.7 ms for 26.3 on Vulkan; the versions differ). A native backend
+  buys features, not speed.
 
 Other people's evidence (not verified by us):
 
-- **MetalCraft** (GPL-3) reports vanilla terrain at about 4.7 ms of GPU time per
-  frame on an M5, render distance 16, with a native Metal backend for Blaze3D.
-  Its scene and resolution differ from ours.
-- **@riccqi** claims a native Metal renderer with fog, dynamic lighting and water
-  reflections at 60 fps at full Retina resolution on a roughly 5-year-old
-  MacBook. No code has been published.
-
-### Phase 0 results (2026-10-04): the graphics API is not the bottleneck
-
-Same seed, same camera, native 3456x2168, render distance 16. GPU time comes
-from Instruments Metal System Traces (5 s each, split per process and per GPU
-channel, parsed with `/tmp/mcbench/gpuparse.py`).
-
-| Setup                                   | FPS  | GPU ms/frame | Vertex | Fragment |
-|-----------------------------------------|------|--------------|--------|----------|
-| 1.21.11 vanilla, OpenGL                 | 36-50 (F3) | GPU 98% busy | n/a | n/a  |
-| 1.21.11 + MetalCraft 0.1.0 (native Metal) | 44.5 | 21.7       | 6.3    | 19.2     |
-| 26.3 vanilla, OpenGL                    | 41 (F3) | GPU 89% busy | n/a  | n/a      |
-| 26.3 vanilla, Vulkan (MoltenVK)         | 56.6 | 17.1         | 5.0    | 12.4     |
-| 26.3 Vulkan, opaque leaves              | 59.4 | 16.5         |        |          |
-| 26.3 Vulkan, clouds off                 | 60.6 | 16.3         |        |          |
-| 26.3 Vulkan, 1/4 of the pixels          | 77.4 | 12.5         | 6.6    | 6.3      |
-
-Vertex and fragment work overlap on the GPU, so those two columns don't add up
-to the total.
-
-What we learned:
-
-- **Every backend is GPU-bound** (89-98% busy) on the same vanilla rendering
-  work. Native Metal for vanilla, as MetalCraft does it, was not faster than
-  MoltenVK. Its 4.7 ms claim comes from a lighter scene.
-- **About 11 ms of the 17 ms frame doesn't depend on resolution.** A quarter of
-  the pixels only saved 4.7 ms. On Apple's tile-based GPUs the "fragment" stage
-  also includes per-triangle work: binning triangles into tiles and
-  hidden-surface removal. That part scales with triangle count, not pixels. So
-  the cost is triangle volume: vanilla's naive terrain path draws every block
-  face of every visible section.
-- **Leaf transparency and clouds are minor** (about 4-5% each).
-- **WindowServer showed 64-79% GPU busy in every run** (compositing a windowed
-  game on a 120 Hz display). Test fullscreen before trusting absolute numbers.
-
-Revised conclusion:
-
-- **Biggest lever:** draw far fewer triangles. That means GPU occlusion culling,
-  face-direction culling, merged quads (greedy meshing) and low-detail far
-  terrain. Phase 1 starts there.
-- **Native Metal is still the right base, for different reasons than first
-  assumed:** memoryless tile G-buffer, MetalFX, Metal ray tracing with no
-  cross-API waiting, and indirect command buffers. Raw API overhead isn't one of
-  the reasons.
+- @riccqi claims a native Metal renderer with fog, dynamic lighting and water
+  reflections at 60 fps at full Retina on a roughly 5-year-old MacBook. No code
+  has been published. Given vanilla's 6.7 ms here, that claim is plausible.
 
 ## Integration decision (2026-10-04, provisional)
 
@@ -146,6 +131,9 @@ Disagreement still open:
 - Settle this with an Xcode GPU frame capture (per-pass and per-draw timings,
   bandwidth, attachment load/store) at 100/67/50% scale, windowed and
   fullscreen, before investing in terrain.
+- **Resolved:** Sol was right to doubt it. The "fixed cost" came from GPU
+  contention. On a clean machine, cost scales with pixels and not with render
+  distance; see Measurements.
 
 ### Gate 1: in-game Vulkan -> Metal -> Vulkan round trip, then MetalFX
 
@@ -164,7 +152,9 @@ Pass bars:
   fullscreen toggles.
 - No-op round-trip cost of 0.5 ms or less p95.
 - MetalFX costs 1.5 ms or less.
-- Vanilla plus upscaler at the target scale: 14 ms GPU or less p95.
+- Vanilla plus upscaler at 67% scale must cost less than vanilla at native
+  (6.7 ms) p95. Otherwise render scale saves nothing. (This replaced a 14 ms
+  bar that was set against the contaminated 17 ms baseline.)
 
 If it fails:
 
@@ -267,63 +257,71 @@ Internal resolution 67%, output 3456x2168, M5 10-core GPU:
 
 | Pass                                   | Budget  |
 |----------------------------------------|---------|
-| Culling + depth pyramid                | 0.5 ms  |
-| Terrain G-buffer + lighting (tile)     | 5.0 ms  |
+| Vanilla-equivalent terrain + entities   | 4.0 ms  |
+| Hand-off to Metal and back             | 0.5 ms  |
 | Shadows (cached far cascades)          | 1.5 ms  |
+| Lighting + sky (tile memory)           | 1.0 ms  |
 | Translucents + water + reflections     | 1.5 ms  |
 | Volumetric fog                         | 1.5 ms  |
 | Clouds (1/4 resolution + reprojection) | 1.0 ms  |
 | Ambient occlusion (half resolution)    | 0.8 ms  |
 | Upscale (MetalFX or TAA)               | 1.5 ms  |
 | Post-processing                        | 1.0 ms  |
-| Entities, particles, GUI               | 1.5 ms  |
-| **Total**                              | **~15.8 ms** |
+| GUI at native resolution               | 0.5 ms  |
+| **Total**                              | **~14.8 ms** |
 
-The biggest risk is the 5 ms terrain number. Phase 0 checks it first.
+The terrain line comes from measured vanilla: 6.7 ms native, about 4 ms
+expected at 67% scale. The largest open risk is the hand-off line, which Gate 1
+measures.
 
-## Phased plan
+## Gated plan (revised 2026-10-04 for the staged Vulkan host + Metal approach)
 
-**Phase 0: prove native Metal is worth it. DONE 2026-10-04, see "Phase 0
-results" above.**
-- Reuse the benchmark harness from the Rockstar test: a world generated by
-  Mojang's dedicated server, the camera set in the player's save file, Metal HUD
-  plus GPU pass timers.
-- Measure MetalCraft (Minecraft 1.21.11) against vanilla OpenGL and vanilla
-  Vulkan on the same scene. This tells us how much of the 19.7 ms is MoltenVK
-  and the vanilla renderer, and how much is unavoidable.
-- Exit criterion: vanilla-equivalent terrain at 6 ms of GPU time or less, at
-  native resolution, on our scene.
+Each gate has a measurable pass bar on the reference scene, and a stated
+consequence if it fails.
 
-**Phase 1: Metal backend plus our own terrain renderer.**
-- `MetalGpuDevice` for everything else in the game, so vanilla looks the same
-  as before.
-- GPU-driven terrain with compact meshes, compute culling and indirect draws.
-- Cut triangle count first: occlusion culling against a depth pyramid,
-  per-direction face culling, merged quads for identical faces (texture
-  repeat inside the atlas, or a texture array), and low-detail far sections.
-- Exit criterion: vanilla-look terrain at 6 ms of GPU time or less on the
-  reference scene. The current baseline is 17.1 ms for vanilla on Vulkan.
+**Gate 0: baseline. DONE.** Clean vanilla measurements; see "Measurements".
 
-**Phase 2: lighting in tile memory, plus sky.**
-- Single-pass deferred shading in memoryless tile memory, PBR-lite materials
-  (LabPBR later), physically based sky look-up tables, sun and block light.
+**Gate 1: Vulkan -> Metal -> Vulkan round trip + MetalFX** (bars in "Integration
+decision").
 
-**Phase 3: effects.**
-- Shadows, water with reflections, volumetric fog, clouds, ambient occlusion,
-  bloom. Each one is added only if it fits its line in the budget table.
+**Gate 2: Metal draws Minecraft's terrain.**
+- Export vanilla's section vertex/index buffers (`VulkanGpuBuffer`) as
+  `MTLBuffer`s, with no copies.
+- Draw opaque/cutout terrain from Metal into a shadow map first: a depth-only
+  pass from the sun.
+- Bar: correct shadow map, and 1.5 ms or less for a 2048^2 cascade set with
+  cached far cascades.
 
-**Phase 4: upscaling and polish.**
-- MetalFX compared with our own TAA, a dynamic-resolution governor, quality
-  presets.
+**Gate 3: our opaque terrain pass + tile-memory lighting.**
+- Turn off vanilla's opaque/cutout terrain. Metal draws terrain into a
+  memoryless G-buffer, then lights it in the same pass: sun with shadows, sky
+  light, block light, sky.
+- Vanilla still draws entities, particles and translucents over our colour and
+  depth.
+- Bar: terrain + lighting at or below vanilla terrain cost +1 ms at 67%.
 
-**Phase 5 (optional, M3 and later): hardware ray tracing.**
-- Ray-traced shadows and water reflections in Metal compute. There is no
-  cross-API waiting because everything is in Metal.
+**Gate 4: effects.**
+- Water with SSR and an environment fallback, volumetric fog, low-resolution
+  clouds, AO, bloom/tonemap.
+- Each effect must fit its budget line, and the whole frame must reach 60 fps
+  p95 (16.6 ms) at native output.
+
+**Gate 5: temporal upscaling and polish.**
+- MetalFX temporal (needs depth, motion vectors and jitter) vs. spatial.
+- Dynamic resolution, presets.
+
+**Gate 6 (optional, M3+): hardware ray tracing** for shadows and reflections,
+only if it beats the raster version on cost for equal quality.
+
+Fallback: if Gate 1's hand-off bar fails, re-evaluate a full Metal backend for
+RenderPearl (option A). Backends receive SPIR-V, and the game ships SPIRV-Cross.
 
 ## Benchmarking rules
 
-- Fixed world seed, fixed camera, a 50-second warm-up, and Minecraft's idle
+- Fixed world seed, fixed camera, a 50-60 second warm-up, and Minecraft's idle
   frame-rate cap turned off (`inactivityFpsLimit:"minimized"`).
+- Nothing else heavy on the GPU. Close Unreal, Blender and video players.
+  `bench.sh` warns on contention; a run with a warning doesn't count.
 - Record per-pass GPU timings, total GPU time (Metal HUD), frame time and the
   1% lows.
 - Every change to the renderer gets a before/after number on the reference
@@ -332,11 +330,13 @@ results" above.**
 ## Decisions
 
 1. **Decided (2026-10-04): write the backend from scratch, under a permissive
-   license** (Apache-2.0 or MIT, not yet chosen). MetalCraft (GPL-3) is used only
+   license** (Apache-2.0 or MIT; Apache-2.0 chosen, see 5). MetalCraft (GPL-3) is used only
    as an external benchmark. Do not read or copy its source.
 2. **Minecraft version.** Target 26.3 now. Blaze3D changes between releases, so
    expect some porting work on every update.
-3. **Compatibility.** This replaces terrain, so it is incompatible with Sodium,
-   Iris, Distant Horizons and Voxy, the same as Rockstar.
+3. **Compatibility.** From Gate 3 on, this replaces terrain, so it is
+   incompatible with Sodium, Iris, Distant Horizons and Voxy, the same as
+   Rockstar.
+5. **License: Apache-2.0** (chosen 2026-10-04; explicit patent grant).
 4. **Minimum hardware.** M1 and later (Metal 3) for the main renderer.
    Ray-tracing features only on M3 and later.
