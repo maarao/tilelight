@@ -25,10 +25,12 @@ choice: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Use
 
+Needs an Apple Silicon Mac (M1 or later). Tilelight stays off on other machines.
+
 1. Minecraft 26.3, Fabric Loader 0.19.5+, Fabric API.
 2. Set **Graphics API to Vulkan** in Minecraft's video settings. Tilelight
    stays off on OpenGL.
-3. Put `build/libs/tilelight-0.0.1.jar` in `mods/`.
+3. Download the jar from [Releases](https://github.com/maarao/tilelight/releases) and put it in `mods/`.
 4. Optionally add `--enable-native-access=ALL-UNNAMED` to the JVM arguments to
    silence Java's native-access warning.
 
