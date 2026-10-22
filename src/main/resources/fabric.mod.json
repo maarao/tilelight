@@ -5,7 +5,7 @@
 	"name": "Tilelight",
 	"description": "A Metal renderer for Minecraft on Apple Silicon.",
 	"authors": [
-		"maanavr"
+		"maarao"
 	],
 	"license": "Apache-2.0",
 	"environment": "client",
