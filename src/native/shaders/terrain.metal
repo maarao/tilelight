@@ -23,6 +23,12 @@ struct TerrainParams {
 	float4 light;             // x sky brightness (rain), y shadow strength, z shadow texel, w shadows on
 	float4 camera_offset;     // xyz = camera block position - camera position (vanilla's CameraOffset)
 	float4 sky_color;         // rgb = vanilla's sky colour (sRGB), a = exposure
+	float4 lm_ambient;        // vanilla's lightmap inputs: rgb ambient colour, a night vision factor
+	float4 lm_sky;            // rgb sky light colour, a sky light factor
+	float4 lm_block;          // rgb block light tint, a block light factor
+	float4 lm_vision;         // rgb night vision colour, a darkness effect scale
+	float4 lm_misc;           // x boss fog darkening, y brightness option, z sky factor without lightning,
+	                          // w 1 = Overworld lighting model
 };
 
 struct TerrainOut {
@@ -31,25 +37,9 @@ struct TerrainOut {
 	float4 color;
 	float2 uv;
 	float2 light;             // block, sky in 0..1
+	float3 lit;               // vanilla's lightmap here (display space): with its effects, and as tuned against
+	float3 tuned;
 };
-
-vertex TerrainOut tl_terrain_vs(TerrainVertex in [[stage_in]],
-                                constant TerrainParams &p [[buffer(1)]],
-                                constant packed_float3 &origin [[buffer(2)]]) {
-	TerrainOut out;
-	// Same arithmetic as vanilla's terrain.vsh (Position + (ChunkPosition - CameraBlockPos) + CameraOffset)
-	// so our depth matches what vanilla would have written, for coplanar overlays drawn afterwards.
-	float3 world = in.position + float3(origin) + p.camera_offset.xyz;
-	out.position = p.view_proj * float4(world, 1.0);
-	// Minecraft's Vulkan path puts NDC y = -1 on texel row 0; Metal puts y = +1 there. Flip so our
-	// terrain lands upright in Minecraft's textures, matching its depth for later vanilla passes.
-	out.position.y = -out.position.y;
-	out.world = world;
-	out.color = in.color;
-	out.uv = in.uv;
-	out.light = float2(in.light) / 240.0;
-	return out;
-}
 
 static float linear_fog(float d, float start, float end) {
 	return saturate((d - start) / max(end - start, 1e-4));
@@ -103,6 +93,59 @@ static float3 sun_light(float sun_y) {
 	return mix(low, high, elevation) * 2.6 * smoothstep(-0.03, 0.08, sun_y);
 }
 
+// Fog in display space, so far terrain fades into vanilla's (untonemapped) sky exactly as before.
+static float3 fogged(float3 color, float3 world, constant TerrainParams &p) {
+	float spherical = length(world);
+	float cylindrical = max(length(world.xz), abs(world.y));
+	float fog = max(linear_fog(spherical, p.fog.x, p.fog.y), linear_fog(cylindrical, p.fog.z, p.fog.w));
+	return saturate(mix(color, p.fog_color.rgb, fog * p.fog_color.a));
+}
+
+static float lightmap_curve(float level) {
+	return level / (4.0 - 3.0 * level);
+}
+
+// Vanilla's lightmap.fsh for one block/sky light level pair (0..1), in display space. Without effects
+// it is the lightmap our lighting was tuned against: no night vision, darkness or boss fog, default
+// brightness, steady block light and no lightning.
+static float3 vanilla_lightmap(float block, float sky, constant TerrainParams &p, bool effects) {
+	float3 c = p.lm_ambient.rgb;
+	if (effects) c = max(c, p.lm_vision.rgb * p.lm_ambient.a);
+	c += p.lm_sky.rgb * lightmap_curve(sky) * (effects ? p.lm_sky.a : p.lm_misc.z);
+	float edge = (2.0 * block - 1.0) * (2.0 * block - 1.0);
+	c += mix(p.lm_block.rgb, float3(1.0), 0.9 * edge) * lightmap_curve(block) * (effects ? p.lm_block.a : 1.4);
+	if (effects) {
+		c = mix(c, c * float3(0.7, 0.6, 0.6), p.lm_misc.x);
+		c -= p.lm_vision.a;
+	}
+	c = saturate(c);
+	float top = max(max(c.x, c.y), c.z);
+	float inverted = 1.0 - top;
+	float3 lifted = c * ((1.0 - inverted * inverted * inverted * inverted) / max(top, 1e-5));
+	return mix(c, lifted, effects ? p.lm_misc.y : 0.5);
+}
+
+vertex TerrainOut tl_terrain_vs(TerrainVertex in [[stage_in]],
+                                constant TerrainParams &p [[buffer(1)]],
+                                constant packed_float3 &origin [[buffer(2)]]) {
+	TerrainOut out;
+	// Same arithmetic as vanilla's terrain.vsh (Position + (ChunkPosition - CameraBlockPos) + CameraOffset)
+	// so our depth matches what vanilla would have written, for coplanar overlays drawn afterwards.
+	float3 world = in.position + float3(origin) + p.camera_offset.xyz;
+	out.position = p.view_proj * float4(world, 1.0);
+	// Minecraft's Vulkan path puts NDC y = -1 on texel row 0; Metal puts y = +1 there. Flip so our
+	// terrain lands upright in Minecraft's textures, matching its depth for later vanilla passes.
+	out.position.y = -out.position.y;
+	out.world = world;
+	out.color = in.color;
+	out.uv = in.uv;
+	out.light = float2(in.light) / 240.0;
+	// Per vertex, like vanilla, which samples its lightmap texture in the vertex shader.
+	out.lit = vanilla_lightmap(out.light.x, out.light.y, p, true);
+	out.tuned = vanilla_lightmap(out.light.x, out.light.y, p, false);
+	return out;
+}
+
 static half4 shade(TerrainOut in, half4 albedo, constant TerrainParams &p, depth2d<float> shadow_map, sampler compare) {
 	// Block faces are flat, so screen-space derivatives give the exact face normal.
 	float3 n = normalize(cross(dfdx(in.world), dfdy(in.world)));
@@ -110,6 +153,20 @@ static half4 shade(TerrainOut in, half4 albedo, constant TerrainParams &p, depth
 	float3 sun = p.sun_dir_day.xyz;
 	float block = in.light.x;
 	float sky = in.light.y;
+	float3 lit = srgb_to_linear(in.lit);
+
+	if (p.lm_misc.w < 0.5) {
+		// Nether, End: no sun to shape faces, so keep vanilla's baked face shading and light with its
+		// lightmap (each dimension's ambient, sky and block colours), in linear HDR like the Overworld.
+		// The gain offsets the tonemap's toe: dim, mid-albedo surfaces come out as bright as vanilla's,
+		// lit ones brighter (tools/bench/sweep-dims.sh).
+		float3 hdr = srgb_to_linear(float3(albedo.rgb)) * lit * 2.5 * p.sky_color.a;
+		// Tonemap the brightest channel and scale the colour with it: per channel, lava (the brightest
+		// thing here) turns yellow.
+		float top = max(max(hdr.r, hdr.g), max(hdr.b, 1e-5));
+		hdr *= tonemap(float3(top)).r / top;
+		return half4(half3(fogged(linear_to_srgb(hdr), in.world, p)), 1.0h);
+	}
 
 	float3 base = srgb_to_linear(float3(albedo.rgb)) / (vanilla_face_shade(n) * vanilla_face_shade(n));
 
@@ -136,19 +193,18 @@ static half4 shade(TerrainOut in, half4 albedo, constant TerrainParams &p, depth
 	float3 lamp = float3(1.0, 0.62, 0.32) * 1.6 * pow(block, 2.4);
 	float3 light = direct + ambient + lamp + float3(0.006); // never fully black, like vanilla's minimum
 
+	// Vanilla's effects (night vision, darkness, boss fog, brightness option, torch flicker, lightning)
+	// as they change its lightmap here: darkening scales our light by the same ratio, brightening adds
+	// the same amount of light.
+	float3 tuned = srgb_to_linear(in.tuned);
+	light = light * min((lit + 1e-3) / (tuned + 1e-3), 1.0) + max(lit - tuned, 0.0);
+
 	float3 hdr = base * light * p.sky_color.a;
 	// The per-channel curve oversaturates bright, strongly tinted surfaces (sunlit leaves and grass);
 	// pull those slightly toward their luminance.
 	float lum = dot(hdr, float3(0.2126, 0.7152, 0.0722));
 	hdr = mix(float3(lum), hdr, mix(1.0, 0.8, saturate(lum)));
-	float3 color = linear_to_srgb(tonemap(hdr));
-
-	// Fog in display space, so far terrain fades into vanilla's (untonemapped) sky exactly as before.
-	float spherical = length(in.world);
-	float cylindrical = max(length(in.world.xz), abs(in.world.y));
-	float fog = max(linear_fog(spherical, p.fog.x, p.fog.y), linear_fog(cylindrical, p.fog.z, p.fog.w));
-	color = mix(color, p.fog_color.rgb, fog * p.fog_color.a);
-	return half4(half3(saturate(color)), 1.0h);
+	return half4(half3(fogged(linear_to_srgb(tonemap(hdr)), in.world, p)), 1.0h);
 }
 
 fragment half4 tl_terrain_fs(TerrainOut in [[stage_in]],

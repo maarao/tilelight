@@ -99,6 +99,8 @@ public final class ScaledFrame {
 	// Set once the world depth was copied this frame (always-on-top features may clear it before the hand).
 	private boolean worldDepthCopied;
 	private boolean shadowsWereOn;
+	private boolean bloomUnderCeiling;
+	private java.lang.ref.WeakReference<net.minecraft.client.multiplayer.ClientLevel> lastWorld = new java.lang.ref.WeakReference<>(null);
 
 	private ScaledFrame() {
 		TilelightConfig config = TilelightConfig.get();
@@ -224,6 +226,14 @@ public final class ScaledFrame {
 			}
 		}
 
+		// Without a sky (the Nether), lava, glowstone and fire are the only light: let them glow through
+		// the dark air. Overworld and End bloom only near-white highlights.
+		boolean underCeiling = level.skyRenderState.skybox == net.minecraft.world.level.dimension.DimensionType.Skybox.NONE;
+		if (underCeiling != this.bloomUnderCeiling) {
+			this.bloomUnderCeiling = underCeiling;
+			setBloom();
+		}
+
 		if (in != null && this.terrainDrawn && this.water.enabled() && this.worldDepthCopied) {
 			this.water.submit(this.lib, level, ShadowPass.levelProjection, this.exports.texture(this.worldDepth));
 		}
@@ -275,6 +285,14 @@ public final class ScaledFrame {
 		}
 	}
 
+	private void setBloom() {
+		if (this.bloomUnderCeiling) {
+			this.lib.interopSetBloom(0.3f, 0.3f, TilelightConfig.get().bloom);
+		} else {
+			this.lib.interopSetBloom(0.78f, 0.2f, TilelightConfig.get().bloom);
+		}
+	}
+
 	/**
 	 * Sees the world pass's projection: jitters it for temporal upscaling and keeps it for our passes.
 	 * Returns the projection vanilla should render with.
@@ -301,6 +319,13 @@ public final class ScaledFrame {
 	/** Called at the start of every GameRenderer.renderLevel, including panorama captures. */
 	public void beginLevelRender() {
 		this.terrainDrawn = false;
+		// A new world or dimension: the shadow map and anti-aliasing history show the old one.
+		net.minecraft.client.multiplayer.ClientLevel world = net.minecraft.client.Minecraft.getInstance().level;
+		if (world != this.lastWorld.get()) {
+			this.lastWorld = new java.lang.ref.WeakReference<>(world);
+			this.shadows.invalidate();
+			this.temporal.resetHistory();
+		}
 	}
 
 	/**
@@ -309,8 +334,6 @@ public final class ScaledFrame {
 	 */
 	public void terrainHandoff(LevelRenderState level) {
 		if (!this.swapped || this.state != State.ACTIVE || !this.terrain.enabled()) return;
-		// The lighting model is the Overworld's (sun, sky); elsewhere vanilla draws terrain.
-		if (level.skyRenderState.skybox != net.minecraft.world.level.dimension.DimensionType.Skybox.OVERWORLD) return;
 		Substitute main = this.substitutes.getFirst();
 		boolean shadowsOn = this.shadows.appliesTo(level);
 		long t0 = System.nanoTime();
@@ -318,8 +341,9 @@ public final class ScaledFrame {
 			this.shadows.submit(this.lib, this.exports, level, false, 0L, 0L);
 		}
 		long t1 = System.nanoTime();
-		this.terrain.prepare(this.exports, level, ShadowPass.levelProjection, shadowsOn ? this.shadows.sample() : null,
-				level.skyRenderState.sunAngle);
+		this.terrain.prepare(this.exports, level, net.minecraft.client.Minecraft.getInstance().gameRenderer.gameRenderState().lightmapRenderState,
+				level.skyRenderState.skybox == net.minecraft.world.level.dimension.DimensionType.Skybox.OVERWORLD,
+				ShadowPass.levelProjection, shadowsOn ? this.shadows.sample() : null, level.skyRenderState.sunAngle);
 		long t2 = System.nanoTime();
 		this.cpuShadowsNs += t1 - t0;
 		this.cpuGatherNs += t2 - t1;
@@ -534,7 +558,7 @@ public final class ScaledFrame {
 				Tilelight.LOG.warn("Could not get MoltenVK's command queue; using a separate Metal queue");
 			}
 		}
-		this.lib.interopSetBloom(0.78f, 0.2f, TilelightConfig.get().bloom);
+		setBloom();
 		Tilelight.LOG.info("Metal interop active: mode {}, render scale {}, {} queue", this.mode, this.scale,
 				this.sameQueue ? "shared" : "separate");
 		this.state = State.ACTIVE;

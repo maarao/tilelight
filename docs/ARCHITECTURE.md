@@ -628,8 +628,8 @@ Now:
 - **Sun glint on water:** a tight specular highlight of the sun in the
   reflection, which bloom spreads into a glow.
 - **Lighter haze:** default density 0.004 -> 0.0025.
-- **Metal terrain is Overworld-only now;** vanilla draws the Nether and End
-  (the model assumes a sun and a sky).
+- **Metal terrain was Overworld-only at this point;** vanilla drew the Nether
+  and End (the model assumes a sun and a sky). See the 2026-10-22 section.
 - **New settings:** `exposure` (1.0) and `bloom` (0.35).
 
 Screenshots: `docs/look2-lake.png`, `look2-golden.png`, `look2-sunset.png`,
@@ -646,6 +646,80 @@ Cost, interleaved, three runs each (`tools/bench/results/2026-10-05-look.txt`):
 Vanilla-drawn things (entities, water surface colour, particles, hand) keep
 vanilla's lighting, so they can look slightly flat next to Metal-lit terrain.
 
+## Vanilla's lightmap, the Nether and the End (2026-10-22)
+
+Metal-lit terrain used to turn raw block/sky light levels straight into light,
+skipping vanilla's lightmap. So on Metal terrain the Brightness slider, night
+vision (and conduit power underwater), Darkness, boss-fog darkening, torch
+flicker and lightning flashes did nothing. Metal terrain was also
+Overworld-only.
+
+Vanilla's lightmap (`lightmap.fsh`) is data-driven: per-dimension ambient, sky
+and block-light colours come from environment attributes, plus effect factors,
+all in `LightmapRenderState`. The terrain pass now gets those inputs and
+evaluates the same function per pixel (`vanilla_lightmap` in
+`terrain.metal`):
+
+- **Overworld:** the sun/sky HDR model stays. Vanilla's effects are applied as
+  they change its lightmap at this pixel, relative to the lightmap the model was
+  tuned against (no effects, default brightness, steady block light, no
+  lightning).
+  - Where vanilla's lightmap gets darker (Darkness, boss fog, Moody brightness),
+    our light is scaled by the same ratio.
+  - Where it gets brighter (night vision, Bright, flicker, lightning), the same
+    amount of light is added.
+  - With no effect active the two lightmaps are identical, so the Overworld
+    looks exactly as before.
+  - Lightning raises the sky light factor to 1. `ClientLevel.getSkyFlashTime()`
+    tells us when, and the tuned factor then comes from the Overworld timeline
+    (1 by day, 0.24 at night).
+- **Nether, End:** there's no sun to shape faces, so vanilla's baked face
+  shading is kept and terrain is lit by vanilla's lightmap, linearised, times a
+  gain of 2.5.
+  - The gain offsets ACES's toe. Both dimensions sit mostly in dim lightmap
+    values that the curve crushes: at gain 1 the Nether came out at half
+    vanilla's brightness.
+  - At 2.5, dim mid-albedo surfaces match vanilla and lit ones come out
+    brighter. Netherrack walls measure (32,11,7) against vanilla's (27,10,8).
+  - The tonemap scales colour by its brightest channel. Per channel, lava turned
+    yellow (G/R 0.62 against vanilla's 0.46); hue-preserving gives 0.47.
+  - Shadows and volumetrics stay Overworld-only (they follow the sun); water
+    glints are off.
+- **Nether glow:** under a ceiling sky (`skybox none`), bloom starts at
+  luminance 0.3 instead of 0.78. Lava, glowstone and fire then glow into the dark
+  air: a subtle halo where lava meets the walls, which slightly softens the lava
+  texture.
+
+Screenshots (vanilla terrain left, Metal right): `docs/dims-nether-vanilla.png`
+/ `dims-nether-tilelight.png`, `dims-end-vanilla.png` / `dims-end-tilelight.png`.
+Night vision at midnight, before and after: `docs/effects-midnight.png` /
+`effects-night-vision.png`.
+
+Cost: `tools/bench/sweep-dims.sh` with `TRACE=1`, two interleaved rounds,
+against Tilelight with `terrain=false` (render scale and TAA still on Metal).
+Results are in `tools/bench/results/2026-10-22-dims.txt`.
+
+| Scene            | Vanilla terrain           | Metal terrain             |
+|------------------|---------------------------|---------------------------|
+| Nether, lava sea | 3.35 ms/frame (~270 fps)  | 3.72 ms/frame (~245 fps)  |
+| End, main island | 3.08 ms/frame (~291 fps)  | 3.33 ms/frame (~273 fps)  |
+
+Without a shadow map or volumetrics, the Metal terrain pass and the wider
+Nether bloom cost about 0.25-0.4 ms, which leaves both dimensions far above any
+display's refresh rate.
+
+GPT-6.1 Sol audited this change. Fixed from its findings:
+
+- the lightmap is now evaluated per vertex and interpolated, as vanilla does,
+  instead of per fragment from interpolated light levels (gradients differed);
+- the shadow map cache and TAA history are reset on a new world or dimension.
+
+One finding is pre-existing and recorded under Known issues.
+
+Not verified on screen: the End flash (random, hard to catch) and the Brightness
+slider. Both go through the same `vanilla_lightmap` path as night vision and
+Darkness, which were checked.
+
 ## Known issues
 
 From GPT-6.1 Sol's audit of Gate 1 (2026-10-04). Findings 1, 2, 3, 5 and 6
@@ -660,3 +734,9 @@ were verified against the sources and fixed. These two are deferred:
   committed** leaves `worldDone` without a producer. Our queue would wait
   forever. That is harmless to Minecraft, which is already failing, but it
   isn't handled.
+- **Volumetric sun shafts and water sun glints check only for an Overworld-type
+  sky**, not for sky light at the camera (GPT-6.1 Sol, 2026-10-22). In the
+  `overworld_caves` world preset, or a custom dimension with the Overworld
+  skybox but no sky, they can appear where no sun reaches beyond the shadow
+  map's coverage. Terrain lighting already gates the sun on the local sky
+  light level.

@@ -7,6 +7,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
+import net.minecraft.world.level.dimension.DimensionType;
 import org.joml.Matrix4f;
 import org.joml.Vector3fc;
 
@@ -54,7 +55,8 @@ final class WaterPass {
 		p.set(ValueLayout.JAVA_FLOAT, 176, (float) -Math.sin(a));
 		p.set(ValueLayout.JAVA_FLOAT, 180, sunY);
 		p.set(ValueLayout.JAVA_FLOAT, 184, 0f);
-		float up = Math.clamp((sunY + 0.02f) / 0.1f, 0f, 1f);
+		// No sun to glint outside the Overworld sky (sunAngle is stale or default there).
+		float up = level.skyRenderState.skybox == DimensionType.Skybox.OVERWORLD ? Math.clamp((sunY + 0.02f) / 0.1f, 0f, 1f) : 0f;
 		p.set(ValueLayout.JAVA_FLOAT, 188, up * level.skyRenderState.rainBrightness);
 		int rc = lib.interopSetWater(p, worldDepth);
 		if (rc != NativeLib.OK) {

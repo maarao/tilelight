@@ -1,0 +1,56 @@
+== nether-vanilla
+window 5.41 s
+java (74902)                             busy   4894.9 ms ( 90.5% of window) | 3.38 ms/frame over 1447 frames (267.5 fps)
+    Compute      busy   1322.6 ms = 0.91 ms/frame
+    Fragment     busy   3120.9 ms = 2.16 ms/frame
+    Vertex       busy    491.8 ms = 0.34 ms/frame
+WindowServer (397)                       busy     68.0 ms (  1.3% of window) | 5.23 ms/frame over 13 frames (2.4 fps)
+== nether-tilelight
+window 5.35 s
+java (75712)                             busy   4893.3 ms ( 91.4% of window) | 3.74 ms/frame over 1307 frames (244.2 fps)
+    Compute      busy   1416.7 ms = 1.08 ms/frame
+    Fragment     busy   3074.9 ms = 2.35 ms/frame
+    Vertex       busy    453.3 ms = 0.35 ms/frame
+WindowServer (397)                       busy     67.6 ms (  1.3% of window) | 5.20 ms/frame over 13 frames (2.4 fps)
+== end-vanilla
+window 5.35 s
+java (76287)                             busy   4791.1 ms ( 89.5% of window) | 3.08 ms/frame over 1558 frames (291.1 fps)
+    Compute      busy   1254.4 ms = 0.81 ms/frame
+    Fragment     busy   3044.8 ms = 1.95 ms/frame
+    Vertex       busy    535.5 ms = 0.34 ms/frame
+WindowServer (397)                       busy     51.4 ms (  1.0% of window) | 5.14 ms/frame over 10 frames (1.9 fps)
+== end-tilelight
+window 5.34 s
+java (76852)                             busy   4836.8 ms ( 90.6% of window) | 3.32 ms/frame over 1459 frames (273.4 fps)
+    Compute      busy   1388.4 ms = 0.95 ms/frame
+    Fragment     busy   3001.7 ms = 2.06 ms/frame
+    Vertex       busy    505.4 ms = 0.35 ms/frame
+WindowServer (397)                       busy     25.8 ms (  0.5% of window) | 5.16 ms/frame over 5 frames (0.9 fps)
+== nether-vanilla
+window 5.42 s
+java (77408)                             busy   4910.7 ms ( 90.5% of window) | 3.32 ms/frame over 1477 frames (272.3 fps)
+    Compute      busy   1325.0 ms = 0.90 ms/frame
+    Fragment     busy   3126.1 ms = 2.12 ms/frame
+    Vertex       busy    500.4 ms = 0.34 ms/frame
+WindowServer (397)                       busy     54.3 ms (  1.0% of window) | 5.43 ms/frame over 10 frames (1.8 fps)
+== nether-tilelight
+window 5.34 s
+java (77897)                             busy   4868.8 ms ( 91.3% of window) | 3.69 ms/frame over 1319 frames (247.2 fps)
+    Compute      busy   1419.1 ms = 1.08 ms/frame
+    Fragment     busy   3054.1 ms = 2.32 ms/frame
+    Vertex       busy    447.7 ms = 0.34 ms/frame
+WindowServer (397)                       busy     44.2 ms (  0.8% of window) | 4.42 ms/frame over 10 frames (1.9 fps)
+== end-vanilla
+window 5.35 s
+java (78417)                             busy   4800.2 ms ( 89.7% of window) | 3.07 ms/frame over 1566 frames (292.7 fps)
+    Compute      busy   1259.9 ms = 0.80 ms/frame
+    Fragment     busy   3050.2 ms = 1.95 ms/frame
+    Vertex       busy    533.3 ms = 0.34 ms/frame
+WindowServer (397)                       busy     31.0 ms (  0.6% of window) | 5.16 ms/frame over 6 frames (1.1 fps)
+== end-tilelight
+window 5.33 s
+java (78931)                             busy   4832.4 ms ( 90.6% of window) | 3.33 ms/frame over 1453 frames (272.4 fps)
+    Compute      busy   1387.2 ms = 0.95 ms/frame
+    Fragment     busy   2999.7 ms = 2.06 ms/frame
+    Vertex       busy    505.1 ms = 0.35 ms/frame
+WindowServer (397)                       busy     41.9 ms (  0.8% of window) | 5.23 ms/frame over 8 frames (1.5 fps)

@@ -1,6 +1,7 @@
 package dev.tilelight.render;
 
 import dev.tilelight.TilelightConfig;
+import dev.tilelight.mixin.ClientLevelAccessor;
 import dev.tilelight.mixin.LevelRendererAccessor;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -11,6 +12,7 @@ import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.SectionMesh;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.client.renderer.fog.FogData;
+import net.minecraft.client.renderer.state.LightmapRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
@@ -18,15 +20,16 @@ import org.joml.Matrix4f;
 import org.joml.Vector3fc;
 
 /**
- * Gate 3: replaces vanilla's opaque (SOLID + CUTOUT) terrain with a Metal pass that lights it with
- * sun, sky and block light, using the shadow map for sun visibility.
+ * Gate 3: replaces vanilla's opaque (SOLID + CUTOUT) terrain with a Metal pass. In the Overworld it
+ * lights it with sun, sky and block light, using the shadow map for sun visibility; elsewhere with
+ * vanilla's lightmap. Vanilla's lightmap inputs also carry its effects (night vision, darkness...).
  *
  * <p>Uses vanilla's own visible-section list, so culling matches vanilla exactly. Configured by
  * {@code terrain} in {@link TilelightConfig}.
  */
 final class TerrainPass {
 	// tl_terrain_params and tl_draw in tilelight.h
-	private static final long PARAMS_SIZE = 224;
+	private static final long PARAMS_SIZE = 304;
 	private static final long DRAW_SIZE = 56;
 	private static final int DRAW_CUTOUT = 1;
 
@@ -58,8 +61,12 @@ final class TerrainPass {
 		return this.complete;
 	}
 
-	/** Fills params and the draw list for this frame. shadowSample is null when there are no shadows. */
-	void prepare(MetalExports exports, LevelRenderState level, Matrix4f projection, Matrix4f shadowSample, float sunAngle) {
+	/**
+	 * Fills params and the draw list for this frame. shadowSample is null when there are no shadows;
+	 * overworld picks the sun and sky lighting model over vanilla's lightmap.
+	 */
+	void prepare(MetalExports exports, LevelRenderState level, LightmapRenderState lightmap, boolean overworld, Matrix4f projection,
+			Matrix4f shadowSample, float sunAngle) {
 		Minecraft mc = Minecraft.getInstance();
 		LevelRendererAccessor lr = (LevelRendererAccessor) mc.levelRenderer;
 		SectionRenderDispatcher dispatcher = lr.tilelight$sectionRenderDispatcher();
@@ -104,6 +111,24 @@ final class TerrainPass {
 		p.set(ValueLayout.JAVA_FLOAT, 212, skyColor != null ? skyColor.y() : fog.color.y);
 		p.set(ValueLayout.JAVA_FLOAT, 216, skyColor != null ? skyColor.z() : fog.color.z);
 		p.set(ValueLayout.JAVA_FLOAT, 220, TilelightConfig.get().exposure);
+		writeVec(p, 224, lightmap.ambientColor, lightmap.nightVisionEffectIntensity);
+		writeVec(p, 240, lightmap.skyLightColor, lightmap.skyFactor);
+		writeVec(p, 256, lightmap.blockLightTint, lightmap.blockFactor);
+		writeVec(p, 272, lightmap.nightVisionColor, lightmap.darknessEffectScale);
+		p.set(ValueLayout.JAVA_FLOAT, 288, lightmap.bossOverlayWorldDarkening);
+		p.set(ValueLayout.JAVA_FLOAT, 292, lightmap.brightness);
+		// Lightning raises the sky light factor to 1; the Overworld timeline's own factor is 1 by day
+		// and 0.24 at night.
+		boolean flash = mc.level != null && ((ClientLevelAccessor) mc.level).tilelight$skyFlashTime() > 0;
+		p.set(ValueLayout.JAVA_FLOAT, 296, flash ? Math.min(lightmap.skyFactor, 0.24f + 0.76f * day) : lightmap.skyFactor);
+		p.set(ValueLayout.JAVA_FLOAT, 300, overworld ? 1f : 0f);
+	}
+
+	private static void writeVec(MemorySegment p, long offset, Vector3fc v, float w) {
+		p.set(ValueLayout.JAVA_FLOAT, offset, v.x());
+		p.set(ValueLayout.JAVA_FLOAT, offset + 4, v.y());
+		p.set(ValueLayout.JAVA_FLOAT, offset + 8, v.z());
+		p.set(ValueLayout.JAVA_FLOAT, offset + 12, w);
 	}
 
 	private int gather(MetalExports exports, List<SectionRenderDispatcher.RenderSection> sections, SectionRenderDispatcher dispatcher,

@@ -1,10 +1,14 @@
 # usage: setcam.py <world_dir>  -- put the singleplayer player at a fixed camera, flying
+# CAM="<dimension> x y z yaw pitch" picks another camera (default: the Overworld reference scene).
 import nbtlib, sys, glob, os
-from nbtlib.tag import Double, Float, Byte, List
+from nbtlib.tag import Double, Float, Byte, List, String
 w = sys.argv[1]
+cam = os.environ.get("CAM", "minecraft:overworld -24.5 100.0 6.5 0.0 20.0").split()
+dim, (x, y, z, yaw, pitch) = cam[0], map(float, cam[1:])
 def fix(p):
-    p["Pos"] = List[Double]([Double(-24.5), Double(100.0), Double(6.5)])
-    p["Rotation"] = List[Float]([Float(0.0), Float(20.0)])
+    p["Dimension"] = String(dim)
+    p["Pos"] = List[Double]([Double(x), Double(y), Double(z)])
+    p["Rotation"] = List[Float]([Float(yaw), Float(pitch)])
     p["Motion"] = List[Double]([Double(0), Double(0), Double(0)])
     p["abilities"]["flying"] = Byte(1)
     p["OnGround"] = Byte(0)

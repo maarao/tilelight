@@ -40,6 +40,11 @@ final class TemporalPass {
 		return new Matrix4f().translation(2f * this.jitterX / width, 2f * this.jitterY / height, 0f).mul(projection);
 	}
 
+	/** Starts the history over next frame, e.g. in a new dimension. */
+	void resetHistory() {
+		this.prevCamera = null;
+	}
+
 	void submit(NativeLib lib, LevelRenderState level, Matrix4f jitteredProjection, int width, int height, long worldDepth,
 			long handDepth) {
 		Matrix4fc view = level.cameraRenderState.viewRotationMatrix;

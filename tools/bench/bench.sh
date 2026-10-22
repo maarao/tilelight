@@ -7,11 +7,13 @@
 # Puts the camera at the fixed spot, launches into world "bench", waits $WAIT seconds
 # (default 50) for chunks to load, then either:
 #   TRACE=1  records a 5 s Metal System Trace and appends the parsed GPU time to $RESULTS
+#   SHOT=1   saves a screenshot of the game window to $OUT/$LABEL.png
 #   default  signals READY and waits for GO (manual screenshot via computer use)
+# CAM (see setcam.py) picks the camera, including the dimension.
 # and finally quits the game.
 set -u
 INST=$1; LABEL=$2
-WAIT=${WAIT:-50}; TRACE=${TRACE:-0}
+WAIT=${WAIT:-50}; TRACE=${TRACE:-0}; SHOT=${SHOT:-0}
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${OUT:-/tmp/mcbench}; RESULTS=${RESULTS:-$OUT/results.txt}
 mkdir -p "$OUT"
@@ -38,6 +40,9 @@ if [ "$TRACE" = 1 ]; then
   # Phase 0 numbers ~2.5x, showing up as WindowServer 64-79% busy instead of the clean ~9%.
   # Flag any other process above 5% of the GPU, and WindowServer above 30%.
   echo "$PARSED" | awk '/busy/ && !/^ / && !/^java/ { lim = /^WindowServer/ ? 30 : 5; gsub(/[(%]/," "); for (i=1;i<=NF;i++) if ($i=="of" && $(i-1)+0 > lim) print "WARNING: GPU contention from " $0 }' | tee -a "$RESULTS"
+elif [ "$SHOT" = 1 ]; then
+  GP=$(pgrep -f "$PAT" | head -1)
+  screencapture -x -o -l "$(swift "$HERE/winid.swift" "$GP")" "$OUT/$LABEL.png"
 else
   rm -f "$OUT/GO"; echo "$LABEL" > "$OUT/READY"
   until [ -f "$OUT/GO" ]; do sleep 1; done

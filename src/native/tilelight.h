@@ -115,11 +115,20 @@ typedef struct {
 	float camera_offset[4];  // xyz = camera block position - camera position; draw origins are relative
 	                         // to the camera block position in Gate 3
 	float sky_color[4];      // rgb = vanilla's sky colour (sRGB), a = exposure
+	// Vanilla's lightmap inputs (LightmapRenderState), so effects and dimensions light as in vanilla.
+	float lm_ambient[4];     // rgb ambient light colour, a = night vision factor
+	float lm_sky[4];         // rgb sky light colour, a = sky light factor
+	float lm_block[4];       // rgb block light tint, a = block light factor (with flicker)
+	float lm_vision[4];      // rgb night vision colour, a = darkness effect scale
+	float lm_misc[4];        // x boss fog darkening, y brightness option, z sky light factor without
+	                         // lightning, w = 1 for the Overworld (sun and sky) lighting model
 } tl_terrain_params;
+_Static_assert(sizeof(tl_terrain_params) == 304, "TerrainPass.PARAMS_SIZE");
 
 // Commits a command buffer on our queue that waits for shared_event >= wait_value, draws the shadow
 // map if one is queued (tl_interop_set_shadows), draws the SOLID and CUTOUT draws into colour/depth
-// (the low-res world targets, mid-frame), and sets shared_event to signal_value.
+// (the low-res world targets, mid-frame), and sets shared_event to signal_value. Lit with the sun and
+// sky model in the Overworld, with vanilla's lightmap elsewhere; vanilla's effects apply in both.
 int32_t tl_interop_terrain(const tl_terrain_params *params, const tl_draw *draws, int32_t draw_count, void *color_tex,
                            void *depth_tex, void *atlas_tex, void *shared_event, uint64_t wait_value, uint64_t signal_value);
 

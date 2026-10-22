@@ -8,7 +8,10 @@ with Vulkan and handing off through GPU-side events (no CPU waits):
 
 - **Opaque terrain** drawn and lit on Metal in linear HDR: warm shadow-mapped
   sun, cool sky fill, moonlight, block light, filmic tonemap, vanilla-matching fog.
-- **Sun shadows** from a 2048² shadow map drawn straight from Minecraft's
+  The Nether and End are lit from vanilla's lightmap in HDR, with lava glowing
+  in the Nether. Vanilla's lighting effects (Brightness, night vision, Darkness,
+  lightning) apply as usual.
+- **Sun shadows** (Overworld) from a 2048² shadow map drawn straight from Minecraft's
   chunk buffers.
 - **Volumetric haze and sun shafts**, ray-marched through the shadow map.
 - **Water reflections** in screen space, with a sky fallback, Fresnel and sun glints.
